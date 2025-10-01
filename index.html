@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>太陽光・蓄電池 提案シミュレーター（プロト）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>太陽光・蓄電池 提案シミュレーター</h1>
+    <div class="header-actions">
+      <label class="file">
+        <input type="file" id="configFile" accept="application/json" />
+        <span>設定JSONを読み込む</span>
+      </label>
+      <button id="exportConfigBtn">現在の設定を保存</button>
+      <button id="resetBtn" class="muted">初期化</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- 左：入力ウィザード -->
+    <aside id="leftPanel" class="panel">
+      <h2>お客様の状況</h2>
+
+      <section class="group">
+        <label class="lbl">プラン種別</label>
+        <label><input type="radio" name="planType" value="standard" checked /> 従量電灯系</label>
+        <label><input type="radio" name="planType" value="smart" /> スマートライフ系（夜トク/オール電化等）</label>
+      </section>
+
+      <section class="group">
+        <label class="lbl">太陽光の有無</label>
+        <label><input type="radio" name="hasPV" value="true" /> あり</label>
+        <label><input type="radio" name="hasPV" value="false" checked /> なし</label>
+      </section>
+
+      <section class="group">
+        <label class="lbl">電力規模の入力方法</label>
+        <select id="scaleMode">
+          <option value="kwh">年間使用量（kWh/年）</option>
+          <option value="yen">年間電気代（円/年）</option>
+          <option value="household">世帯人数（人）</option>
+        </select>
+
+        <div id="scaleInputs">
+          <div data-mode="kwh">
+            <label>年間使用量（kWh）<input type="number" id="annualKWh" min="0" step="0.1" value="5200"></label>
+          </div>
+          <div data-mode="yen" hidden>
+            <label>年間電気代（円）<input type="number" id="annualBill" min="0" step="100" value="180000"></label>
+          </div>
+          <div data-mode="household" hidden>
+            <label>世帯人数<input type="number" id="household" min="1" max="8" step="1" value="4"></label>
+          </div>
+        </div>
+      </section>
+
+      <section class="group" id="fitBlock" hidden>
+        <label class="lbl">売電情報（<10kW 前提）</label>
+        <label>FIT開始年（西暦）<input type="number" id="fitStartYear" min="2012" max="2030" step="1" value="2024"></label>
+        <label>FIT残存年数（年）<input type="number" id="fitYearsLeft" min="0" max="10" step="1" value="10"></label>
+      </section>
+
+      <section class="group">
+        <label class="lbl">日中使用割合（%）</label>
+        <input type="range" id="dayRatio" min="0" max="100" step="1" value="25" />
+        <div class="hint">目安：日中不在 15%／標準 25%／子育て 35%</div>
+      </section>
+
+      <section class="group">
+        <label class="lbl">評価年数（年）</label>
+        <input type="number" id="evalYears" min="1" max="30" step="1" value="15" />
+        <div class="hint">将来は保守費（PCS/蓄電池）も入れられる欄を追加予定</div>
+      </section>
+
+      <section class="group">
+        <button id="runSuggest">おすすめを再計算</button>
+        <label class="muted small"><input type="checkbox" id="autoRecalc" checked /> 入力変更で自動再計算</label>
+      </section>
+
+      <section class="group">
+        <h3>比較</h3>
+        <button id="addCompare">比較カードを追加</button>
+        <div class="hint">最大4枚。最低1枚は残ります。</div>
+      </section>
+    </aside>
+
+    <!-- 右：結果 -->
+    <section class="content">
+      <div id="cards" class="cards"></div>
+
+      <div id="compareTableWrap" class="compare-wrap" hidden>
+        <h2>比較表</h2>
+        <div id="compareTable"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span>v0.1 Prototype • 設定はJSONで自由に編集可（ヘッダーの読み込み/保存）</span>
+  </footer>
+
+  <script src="./app.js"></script>
+</body>
+</html>
