@@ -1,0 +1,9 @@
+{
+  "priceModel": {
+    "pvFixed": 770322,
+    "batFixed": 373714.20423056,
+    "pvTotal": "3129*x*x + 85022*x + 770322",
+    "batTotal": "-6343.65968615*y*y + 220780.94393087*y + 373714.20423056",
+    "bundleDiscount": "200000 + 0.07*max(S - (pvFixed + batFixed), 0)"
+  }
+}
