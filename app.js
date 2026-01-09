@@ -51,6 +51,16 @@
     const v = Math.round(n);
     return v.toLocaleString('ja-JP');
   };
+  const escapeHtml = (value) => {
+    const s = String(value ?? '');
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+
 
   function formatPct(p) {
     return (p * 100).toFixed(1) + '%';
