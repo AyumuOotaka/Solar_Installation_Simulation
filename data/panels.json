@@ -1,0 +1,73 @@
+[
+  {
+    "id": "panel_a",
+    "maker": "MakerA",
+    "model": "HighEff 430",
+    "watt": 430,
+    "efficiency": 21.5,
+    "warrantyProductYears": 15,
+    "warrantyOutputYears": 25,
+    "tags": [
+      "高効率",
+      "コスパ",
+      "標準"
+    ],
+    "baseModuleYen": 42000
+  },
+  {
+    "id": "panel_b",
+    "maker": "MakerB",
+    "model": "Value 405",
+    "watt": 405,
+    "efficiency": 20.7,
+    "warrantyProductYears": 12,
+    "warrantyOutputYears": 25,
+    "tags": [
+      "コスパ",
+      "標準"
+    ],
+    "baseModuleYen": 36000
+  },
+  {
+    "id": "panel_c",
+    "maker": "MakerC",
+    "model": "Premium 440",
+    "watt": 440,
+    "efficiency": 22.0,
+    "warrantyProductYears": 20,
+    "warrantyOutputYears": 30,
+    "tags": [
+      "高保証",
+      "高効率"
+    ],
+    "baseModuleYen": 52000
+  },
+  {
+    "id": "panel_d",
+    "maker": "MakerD",
+    "model": "Economy 395",
+    "watt": 395,
+    "efficiency": 20.2,
+    "warrantyProductYears": 12,
+    "warrantyOutputYears": 25,
+    "tags": [
+      "低価格",
+      "コスパ"
+    ],
+    "baseModuleYen": 33000
+  },
+  {
+    "id": "panel_e",
+    "maker": "MakerE",
+    "model": "Compact 410",
+    "watt": 410,
+    "efficiency": 21.0,
+    "warrantyProductYears": 15,
+    "warrantyOutputYears": 25,
+    "tags": [
+      "標準",
+      "バランス"
+    ],
+    "baseModuleYen": 40000
+  }
+]
