@@ -1,162 +1,61 @@
-/* Solar & Battery Selector MVP (Ibaraki, contractor tool) */
+/* Solar & Battery Selector v2 (Ibaraki / contractor tool)
+   - Hidden contractor settings (Shift+9 or tiny button)
+   - Pricing: median from polynomial T(x,z); range = median ± (x+z)*25000
+*/
 (() => {
   'use strict';
 
-  const LS_KEY = 'solar_selector_settings_v1';
-  const LS_UNLOCK = 'solar_selector_unlocked_v1';
+  const LS_KEY = 'solar_selector_settings_v2';
+  const LS_ADMIN_UNLOCK = 'solar_selector_admin_unlock_v2';
 
-  // ----- Defaults (can be changed via contractor panel) -----
+  // ---------------- Defaults (contractor only) ----------------
   const DEFAULTS = {
-    profitRatePct: 20,        // contractor profit %
-    rangePct: 5,              // +/- range %
-    fixedFeeYen: 1500,        // monthly fixed fee
-    defaultUnitPrice: 34,     // yen/kWh if not provided
-    coveragePct: 80,          // % of monthly usage to offset with PV (placeholder)
-    pvYieldKwhPerKwMonth: 90, // Ibaraki rough: kWh per kW per month (placeholder)
-    nightPct: 40,             // % of daily usage to shift to battery (placeholder)
-    maxPvKw: 0,               // 0 = unlimited
-    taxIncluded: true,        // show tax included (10%)
-    showBreakdown: false,
+    profitRatePct: 20,
+    fixedFeeYen: 1500,
+    defaultUnitPrice: 34,
+    coveragePct: 80,
+    pvYieldKwhPerKwMonth: 90,
+    nightPct: 40,
+    maxPvKw: 0, // 0 = unlimited
     topN: 3,
-    passcode: 'ogw'           // ⚠️ demo only
+    passcode: 'ogw'
   };
 
-  // ----- Embedded fallback data (replace with your own list later) -----
+  // ---------------- Data (panels) ----------------
+  // You can replace ./data/panels.json later.
   const FALLBACK_PANELS = [
-    {
-      id: 'panel_a',
-      maker: 'MakerA',
-      model: 'HighEff 430',
-      watt: 430,
-      efficiency: 21.5,
-      warrantyProductYears: 15,
-      warrantyOutputYears: 25,
-      tags: ['高効率', 'コスパ', '標準'],
-      // Base wholesale price to contractor (example): per module
-      baseModuleYen: 42000
-    },
-    {
-      id: 'panel_b',
-      maker: 'MakerB',
-      model: 'Value 405',
-      watt: 405,
-      efficiency: 20.7,
-      warrantyProductYears: 12,
-      warrantyOutputYears: 25,
-      tags: ['コスパ', '標準'],
-      baseModuleYen: 36000
-    },
-    {
-      id: 'panel_c',
-      maker: 'MakerC',
-      model: 'Premium 440',
-      watt: 440,
-      efficiency: 22.0,
-      warrantyProductYears: 20,
-      warrantyOutputYears: 30,
-      tags: ['高保証', '高効率'],
-      baseModuleYen: 52000
-    },
-    {
-      id: 'panel_d',
-      maker: 'MakerD',
-      model: 'Economy 395',
-      watt: 395,
-      efficiency: 20.2,
-      warrantyProductYears: 12,
-      warrantyOutputYears: 25,
-      tags: ['低価格', 'コスパ'],
-      baseModuleYen: 33000
-    },
-    {
-      id: 'panel_e',
-      maker: 'MakerE',
-      model: 'Compact 410',
-      watt: 410,
-      efficiency: 21.0,
-      warrantyProductYears: 15,
-      warrantyOutputYears: 25,
-      tags: ['標準', 'バランス'],
-      baseModuleYen: 40000
-    }
+    { id:'panel_a', maker:'MakerA', model:'HighEff 430', watt:430, efficiency:21.5, warrantyProductYears:15, warrantyOutputYears:25, tags:['高効率','コスパ','標準'], baseModuleYen:42000 },
+    { id:'panel_b', maker:'MakerB', model:'Value 405',   watt:405, efficiency:20.7, warrantyProductYears:12, warrantyOutputYears:25, tags:['コスパ','標準'], baseModuleYen:36000 },
+    { id:'panel_c', maker:'MakerC', model:'Premium 440', watt:440, efficiency:22.0, warrantyProductYears:20, warrantyOutputYears:30, tags:['高保証','高効率'], baseModuleYen:52000 },
+    { id:'panel_d', maker:'MakerD', model:'Economy 395', watt:395, efficiency:20.2, warrantyProductYears:12, warrantyOutputYears:25, tags:['低価格','コスパ'], baseModuleYen:33000 },
+    { id:'panel_e', maker:'MakerE', model:'Compact 410', watt:410, efficiency:21.0, warrantyProductYears:15, warrantyOutputYears:25, tags:['標準','バランス'], baseModuleYen:40000 }
   ];
 
-  const FALLBACK_BATTERIES = [
-    {
-      id: 'bat_a',
-      maker: 'MakerA',
-      model: 'Saver 6.5',
-      kwh: 6.5,
-      outputKw: 3.0,
-      warrantyYears: 10,
-      tags: ['節約', '標準'],
-      baseUnitYen: 680000,      // wholesale (example)
-      baseInstallYen: 180000
-    },
-    {
-      id: 'bat_b',
-      maker: 'MakerB',
-      model: 'Saver 9.8',
-      kwh: 9.8,
-      outputKw: 4.0,
-      warrantyYears: 10,
-      tags: ['節約', '人気'],
-      baseUnitYen: 860000,
-      baseInstallYen: 200000
-    },
-    {
-      id: 'bat_c',
-      maker: 'MakerC',
-      model: 'Premium 12.7',
-      kwh: 12.7,
-      outputKw: 5.5,
-      warrantyYears: 15,
-      tags: ['大容量', '高保証'],
-      baseUnitYen: 1150000,
-      baseInstallYen: 220000
-    },
-    {
-      id: 'bat_d',
-      maker: 'MakerD',
-      model: 'Mini 5.0',
-      kwh: 5.0,
-      outputKw: 2.5,
-      warrantyYears: 10,
-      tags: ['低価格', '節約'],
-      baseUnitYen: 560000,
-      baseInstallYen: 170000
-    },
-    {
-      id: 'bat_e',
-      maker: 'MakerE',
-      model: 'Balance 8.0',
-      kwh: 8.0,
-      outputKw: 3.5,
-      warrantyYears: 12,
-      tags: ['バランス'],
-      baseUnitYen: 760000,
-      baseInstallYen: 190000
-    }
-  ];
+  // Battery capacity options (kWh) will be loaded from ./data/battery_sizes.json if available.
+  const FALLBACK_BATTERY_SIZES = [3.5, 5.6, 6.3, 6.5, 6.6, 7.7, 9.7, 9.8, 9.9, 10.0, 11.1, 13.3, 13.5, 15.0, 15.4, 16.4, 16.5, 16.6].sort((a,b)=>a-b);
 
-  // System-level base costs (wholesale to contractor)
-  const BASE_COSTS = {
-    pvInstallYen: 350000,     // standard PV install (example)
-    pvBOSYen: 140000,         // mount / wiring / misc (example)
-    inverterYen: 220000       // standard PCS / related (example)
-  };
+  // ---------------- Pricing functions (tax included) ----------------
+  // Based on your image:
+  // T(x,z) = 287000 + 175500x + 200000z - 1200x^2 - 3000z^2
+  // Range = median ± (x+z)*25000
+  const priceMedian = (x, z) => 287000 + 175500*x + 200000*z - 1200*(x**2) - 3000*(z**2);
+  const rangeDelta = (x, z) => (x + z) * 25000;
 
-  // ----- Utilities -----
+  // ---------------- Utilities ----------------
   const el = (id) => document.getElementById(id);
 
-  const formatYen = (n) => {
-    const v = Math.round(n);
-    return v.toLocaleString('ja-JP');
-  };
-
+  const formatYen = (n) => Math.round(n).toLocaleString('ja-JP');
   const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
-
   const roundTo = (n, unit) => Math.round(n / unit) * unit;
+
+  function escapeHtml(s) {
+    return String(s ?? '')
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'",'&#39;');
+  }
 
   function getSettings() {
     try {
@@ -173,30 +72,35 @@
     localStorage.setItem(LS_KEY, JSON.stringify(next));
   }
 
-  function isUnlocked() {
-    return localStorage.getItem(LS_UNLOCK) === '1';
+  function isAdminUnlocked() {
+    return localStorage.getItem(LS_ADMIN_UNLOCK) === '1';
   }
 
-  function setUnlocked(v) {
-    localStorage.setItem(LS_UNLOCK, v ? '1' : '0');
+  function setAdminUnlocked(v) {
+    localStorage.setItem(LS_ADMIN_UNLOCK, v ? '1' : '0');
   }
 
   async function loadJson(path) {
-    const res = await fetch(path, { cache: 'no-store' });
+    const res = await fetch(path, { cache:'no-store' });
     if (!res.ok) throw new Error('fetch failed');
     return await res.json();
   }
 
   async function loadData() {
-    // Try external JSON; fallback to embedded
     let panels = FALLBACK_PANELS;
-    let batteries = FALLBACK_BATTERIES;
+    let batterySizes = FALLBACK_BATTERY_SIZES;
     try { panels = await loadJson('./data/panels.json'); } catch {}
-    try { batteries = await loadJson('./data/batteries.json'); } catch {}
-    return { panels, batteries };
+    try { batterySizes = await loadJson('./data/battery_sizes.json'); } catch {}
+    // sanitize
+    batterySizes = (batterySizes || [])
+      .map(Number)
+      .filter(v => Number.isFinite(v) && v > 0)
+      .sort((a,b)=>a-b);
+    if (!batterySizes.length) batterySizes = FALLBACK_BATTERY_SIZES;
+    return { panels, batterySizes };
   }
 
-  // ----- Core calculations -----
+  // ---------------- Estimation logic ----------------
   function billToKwh({ billYen, unitPrice, fixedFeeYen }) {
     const variable = Math.max(0, billYen - fixedFeeYen);
     const kwh = unitPrice > 0 ? (variable / unitPrice) : 0;
@@ -204,111 +108,94 @@
   }
 
   function recommendPvKw({ usageKwhMonth, coveragePct, pvYieldKwhPerKwMonth, maxPvKw }) {
-    // Placeholder logic (user said "後でロジック差し替え可")
+    // Placeholder logic (you said you will refine later)
     const targetKwh = usageKwhMonth * (coveragePct / 100);
     const rawKw = pvYieldKwhPerKwMonth > 0 ? (targetKwh / pvYieldKwhPerKwMonth) : 0;
 
     let pvKw = rawKw;
     if (maxPvKw && maxPvKw > 0) pvKw = Math.min(pvKw, maxPvKw);
     pvKw = clamp(pvKw, 0, 50);
+    // keep one decimal
+    pvKw = Math.round(pvKw * 10) / 10;
     return { pvKw, targetKwh };
   }
 
-  function choosePanelConfig({ panels, pvKwTarget }) {
-    // Choose best "cost performance" panel by score, then compute required count
+  function chooseBestPanel(panels) {
+    // C/P score: lower yen/W is better; add warranty & efficiency lightly
     const scored = panels.map(p => {
-      const yenPerW = p.baseModuleYen / p.watt; // lower is better
+      const yenPerW = (p.baseModuleYen ?? 0) / (p.watt ?? 1);
       const warrantyScore = (p.warrantyProductYears ?? 0) * 0.02 + (p.warrantyOutputYears ?? 0) * 0.01;
       const effScore = (p.efficiency ?? 0) * 0.03;
-      const score = (1 / yenPerW) * 50 + warrantyScore + effScore; // simplistic
+      const score = (1 / yenPerW) * 50 + warrantyScore + effScore;
       return { ...p, yenPerW, score };
     }).sort((a,b) => b.score - a.score);
 
-    const best = scored[0];
-    const needW = pvKwTarget * 1000;
-    const count = Math.max(1, Math.ceil(needW / best.watt));
-    const actualKw = (count * best.watt) / 1000;
-    return { bestPanel: best, panelCount: count, actualKw, panelRanking: scored };
+    return { best: scored[0], ranking: scored };
   }
 
-  function recommendBatteryKwh({ usageKwhMonth, nightPct, batteries, useBattery }) {
-    if (!useBattery) return { targetKwh: 0, battery: null, batteryRanking: [] };
+  function panelCountForKw({ panelWatt, pvKw }) {
+    const needW = pvKw * 1000;
+    const count = Math.max(1, Math.ceil(needW / panelWatt));
+    const actualKw = (count * panelWatt) / 1000;
+    return { count, actualKw: Math.round(actualKw * 100) / 100 };
+  }
+
+  function recommendBattery({ usageKwhMonth, nightPct, batterySizes, useBattery }) {
+    if (!useBattery) return { targetKwh: 0, z: 0, ranking: [] };
 
     const daily = usageKwhMonth / 30;
     const target = daily * (nightPct / 100);
 
-    // Choose smallest battery >= target; if none, choose max
-    const ranked = batteries
-      .map(b => {
-        // cost per kWh; lower better. warranty adds a little
-        const costPerKwh = (b.baseUnitYen + (b.baseInstallYen ?? 0)) / b.kwh;
-        const score = (1 / costPerKwh) * 100 + (b.warrantyYears ?? 0) * 0.05;
-        return { ...b, costPerKwh, score };
-      })
-      .sort((a,b) => b.score - a.score);
+    // choose smallest option >= target; if none, max
+    const z = batterySizes.find(v => v >= target) ?? batterySizes[batterySizes.length - 1] ?? 0;
 
-    const candidates = ranked
+    // ranking: show near options (closest by abs diff)
+    const ranking = batterySizes
       .slice()
-      .sort((a,b) => a.kwh - b.kwh);
+      .sort((a,b) => Math.abs(a - target) - Math.abs(b - target));
 
-    let chosen = candidates.find(x => x.kwh >= target) || candidates[candidates.length - 1] || null;
-    return { targetKwh: target, battery: chosen, batteryRanking: ranked };
+    return { targetKwh: target, z, ranking };
   }
 
-  function estimateTotal({
-    panel, panelCount,
-    battery,
-    settings
-  }) {
-    const pvModules = panel.baseModuleYen * panelCount;
-    const pvFixed = BASE_COSTS.pvInstallYen + BASE_COSTS.pvBOSYen + BASE_COSTS.inverterYen;
+  function estimatePriceRange({ x, z, profitRatePct }) {
+    const medianBase = priceMedian(x, z); // tax included
+    const median = medianBase * (1 + (profitRatePct / 100));
+    const delta = rangeDelta(x, z);
 
-    const batUnit = battery ? battery.baseUnitYen : 0;
-    const batInstall = battery ? (battery.baseInstallYen ?? 0) : 0;
+    let min = median - delta;
+    let max = median + delta;
 
-    const baseTotal = pvModules + pvFixed + batUnit + batInstall;
-
-    const profitRate = settings.profitRatePct / 100;
-    const afterProfit = baseTotal * (1 + profitRate);
-
-    const range = settings.rangePct / 100;
-    let min = afterProfit * (1 - range);
-    let max = afterProfit * (1 + range);
-
-    // tax included?
-    const tax = settings.taxIncluded ? 1.10 : 1.0;
-    min *= tax; max *= tax;
-
-    // round to nearest 10,000 yen for presentation
+    min = Math.max(0, min);
+    // round to 10,000 yen
     min = roundTo(min, 10000);
     max = roundTo(max, 10000);
 
-    return {
-      baseTotal,
-      afterProfit,
-      min,
-      max,
-      breakdown: {
-        pvModules,
-        pvFixed,
-        batUnit,
-        batInstall
-      }
-    };
+    return { medianBase, median, min, max, delta };
   }
 
-  // ----- Rendering -----
-  function buildReasons({ usageKwhMonth, variableYen, unitPrice, fixedFeeYen, pv, panelPick, batRec, settings, billYen }) {
+  // ---------------- Rendering ----------------
+  function setResultVisible(visible) {
+    el('resultEmpty').classList.toggle('hidden', visible);
+    el('result').classList.toggle('hidden', !visible);
+    el('result').setAttribute('aria-hidden', visible ? 'false' : 'true');
+  }
+
+  function applyPresentationMode(on) {
+    document.body.classList.toggle('present', on);
+    el('btnPresent').textContent = on ? 'プレゼン解除' : 'プレゼン表示';
+  }
+
+  function buildReasons({ billYen, fixedFeeYen, unitPrice, usageKwhMonth, variableYen, pv, xActual, battery, zActual }) {
     const reasons = [];
     reasons.push(`月の電気代 <b>${formatYen(billYen)}円</b> から、固定費 <b>${formatYen(fixedFeeYen)}円</b> を除外し、単価 <b>${unitPrice.toFixed(1)}円/kWh</b> で使用量を推定しました。`);
     reasons.push(`推定使用量は <b>${usageKwhMonth.toFixed(0)}kWh/月</b>（変動分: <b>${formatYen(variableYen)}円</b>）。`);
-    reasons.push(`自家消費で賄いたい割合を <b>${settings.coveragePct}%</b> とし、茨城の概算発電量 <b>${settings.pvYieldKwhPerKwMonth}kWh/kW/月</b> で推奨容量を算出しています（後でロジック差し替え可）。`);
-    reasons.push(`パネルは “円/W + 保証 + 効率” を簡易スコア化し、最もコスパが良い候補から枚数を決めています。`);
-    if (batRec.battery) {
-      reasons.push(`蓄電池は夜間比率 <b>${settings.nightPct}%</b> を目安にし、扱い製品の容量に合わせて選定しています。`);
+    reasons.push(`推奨PVは <b>${pv.pvKw.toFixed(1)}kW</b>（目標ベース）。実際の提案はパネル枚数に合わせて <b>${xActual.toFixed(2)}kW</b> としています。`);
+    if (zActual > 0) {
+      reasons.push(`蓄電池は夜間比率を目安に <b>${battery.targetKwh.toFixed(1)}kWh</b> を狙い、扱いやすい容量（候補リスト）から <b>${zActual.toFixed(1)}kWh</b> を選びました。`);
     } else {
       reasons.push(`蓄電池はオフのため、太陽光のみの概算です。`);
     }
+    reasons.push(`総額の中央値は、PV容量 x と蓄電池容量 z を用いた式 <b>T(x,z)</b> で算出し、レンジは <b>中央値 ± (x+z)×25,000円</b> としています。`);
     return `<ul>${reasons.map(r => `<li>${r}</li>`).join('')}</ul>`;
   }
 
@@ -330,77 +217,56 @@
     `;
   }
 
-  function escapeHtml(s) {
-    return String(s ?? '')
-      .replaceAll('&','&amp;')
-      .replaceAll('<','&lt;')
-      .replaceAll('>','&gt;')
-      .replaceAll('"','&quot;')
-      .replaceAll("'",'&#39;');
-  }
-
-  function renderCandidates({ panelPick, batRec, totals, settings }) {
-    const topN = Number(settings.topN) || 3;
-
-    const panelTop = panelPick.panelRanking.slice(0, topN);
-    const batteryTop = batRec.batteryRanking.slice(0, topN);
+  function renderCandidates({ panelPick, panelCount, xActual, battery, zActual, batterySizes, topN }) {
+    const panelTop = panelPick.ranking.slice(0, topN);
 
     const panelCards = panelTop.map((p, i) => {
-      const yenPerW = (p.yenPerW ?? (p.baseModuleYen / p.watt));
+      const yenPerW = (p.baseModuleYen ?? 0) / (p.watt ?? 1);
       return productCard({
         title: `#${i+1} ${p.maker} ${p.model}`,
         subtitle: `${p.watt}W / 効率${p.efficiency}% / 製品保証${p.warrantyProductYears}年`,
         tags: p.tags,
         lines: [
-          `卸ベース（例）：${formatYen(p.baseModuleYen)}円/枚（${yenPerW.toFixed(1)}円/W）`,
+          `参考：${formatYen(p.baseModuleYen)}円/枚（${yenPerW.toFixed(1)}円/W）`,
           `出力保証：${p.warrantyOutputYears}年`
         ],
         scoreLabel: `score ${p.score.toFixed(2)}`
       });
     }).join('');
 
-    const batCards = batteryTop.map((b, i) => {
-      const costPer = (b.costPerKwh ?? ((b.baseUnitYen + (b.baseInstallYen ?? 0)) / b.kwh));
+    // Battery size candidates: show nearest options
+    const batTop = (battery.ranking || []).slice(0, topN).sort((a,b)=>a-b);
+    const batCards = batTop.map((v, i) => {
+      const comp = -3000*(v**2) + 200000*v + 280000; // B(z) (reference)
       return productCard({
-        title: `#${i+1} ${b.maker} ${b.model}`,
-        subtitle: `${b.kwh}kWh / 出力${b.outputKw}kW / 保証${b.warrantyYears}年`,
-        tags: b.tags,
+        title: `#${i+1} 容量 ${v.toFixed(1)}kWh`,
+        subtitle: `候補リストから選定`,
+        tags: ['容量', '節約'],
         lines: [
-          `卸ベース（例）：本体${formatYen(b.baseUnitYen)}円 + 工事${formatYen(b.baseInstallYen ?? 0)}円`,
-          `目安：${costPer.toFixed(0)}円/kWh`
+          `参考：B(z) = ${formatYen(comp)}円（単体の目安）`
         ],
-        scoreLabel: `score ${b.score.toFixed(2)}`
+        scoreLabel: ''
       });
     }).join('');
-
-    const breakdown = settings.showBreakdown ? `
-      <div class="divider"></div>
-      <div class="mini">
-        <b>内訳（卸ベース）</b><br/>
-        PVモジュール: ${formatYen(totals.breakdown.pvModules)}円 / PV固定: ${formatYen(totals.breakdown.pvFixed)}円<br/>
-        蓄電池本体: ${formatYen(totals.breakdown.batUnit)}円 / 蓄電池工事: ${formatYen(totals.breakdown.batInstall)}円
-      </div>
-    ` : '';
 
     return `
       <div class="product-grid">
         ${productCard({
           title: '推奨パネル',
-          subtitle: `${panelPick.bestPanel.maker} ${panelPick.bestPanel.model}`,
-          tags: panelPick.bestPanel.tags,
+          subtitle: `${panelPick.best.maker} ${panelPick.best.model}`,
+          tags: panelPick.best.tags,
           lines: [
-            `推奨枚数：<b>${panelPick.panelCount}枚</b>（約 <b>${panelPick.actualKw.toFixed(2)}kW</b>）`,
-            `※屋根無制限前提。上限が必要なら「PV上限」を設定してください。`
+            `推奨枚数：<b>${panelCount}枚</b>（約 <b>${xActual.toFixed(2)}kW</b>）`
           ],
           scoreLabel: ''
         })}
-        ${batRec.battery ? productCard({
-          title: '推奨蓄電池',
-          subtitle: `${batRec.battery.maker} ${batRec.battery.model}`,
-          tags: batRec.battery.tags,
+        ${zActual > 0 ? productCard({
+          title: '推奨蓄電池（容量）',
+          subtitle: `${zActual.toFixed(1)}kWh`,
+          tags: ['容量', '節約'],
           lines: [
-            `目標：<b>${batRec.targetKwh.toFixed(1)}kWh</b>（夜間比率 ${settings.nightPct}%）`,
-            `選定：<b>${batRec.battery.kwh}kWh</b> / 出力 <b>${batRec.battery.outputKw}kW</b>`
+            `目標：<b>${battery.targetKwh.toFixed(1)}kWh</b>（夜間比率）`,
+            `候補一覧：${batterySizes.length}種類`
           ],
           scoreLabel: ''
         }) : productCard({
@@ -422,124 +288,120 @@
       <div class="divider"></div>
 
       <div class="section">
-        <h3>蓄電池候補（コスパ上位）</h3>
-        <div class="product-grid">${batCards || '<div class="mini">蓄電池OFF</div>'}</div>
+        <h3>蓄電池候補（容量・近い順）</h3>
+        <div class="product-grid">${zActual > 0 ? batCards : '<div class="mini">蓄電池OFF</div>'}</div>
       </div>
-
-      ${breakdown}
     `;
   }
 
-  function renderCompare({ panelPick, batRec, settings }) {
-    const topN = Number(settings.topN) || 3;
-    const pTop = panelPick.panelRanking.slice(0, topN);
-    const bTop = batRec.batteryRanking.slice(0, topN);
+  function renderCompare({ panelPick, topN, batteryTop }) {
+    const pTop = panelPick.ranking.slice(0, topN);
 
     const panelRows = pTop.map((p, i) => {
-      const yenPerW = (p.yenPerW ?? (p.baseModuleYen / p.watt));
+      const yenPerW = (p.baseModuleYen ?? 0) / (p.watt ?? 1);
       return `<tr>
         <td>#${i+1}</td>
         <td>${escapeHtml(p.maker)} ${escapeHtml(p.model)}</td>
         <td>${p.watt}W</td>
         <td>${p.efficiency}%</td>
-        <td>${formatYen(p.baseModuleYen)}円/枚</td>
         <td>${yenPerW.toFixed(1)}円/W</td>
         <td>${p.warrantyProductYears}年</td>
       </tr>`;
     }).join('');
 
-    const batteryRows = bTop.map((b, i) => {
-      const unit = b.baseUnitYen + (b.baseInstallYen ?? 0);
+    const batRows = (batteryTop || []).map((v, i) => {
+      const comp = -3000*(v**2) + 200000*v + 280000;
       return `<tr>
         <td>#${i+1}</td>
-        <td>${escapeHtml(b.maker)} ${escapeHtml(b.model)}</td>
-        <td>${b.kwh}kWh</td>
-        <td>${b.outputKw}kW</td>
-        <td>${formatYen(unit)}円（本体+工事）</td>
-        <td>${b.warrantyYears}年</td>
+        <td>${v.toFixed(1)}kWh</td>
+        <td>${formatYen(comp)}円</td>
       </tr>`;
     }).join('');
 
     return `
       <div class="mini"><b>パネル比較</b></div>
       <table class="table">
-        <thead><tr><th>#</th><th>製品</th><th>W</th><th>効率</th><th>卸ベース</th><th>円/W</th><th>保証</th></tr></thead>
+        <thead><tr><th>#</th><th>製品</th><th>W</th><th>効率</th><th>円/W</th><th>製品保証</th></tr></thead>
         <tbody>${panelRows}</tbody>
       </table>
 
       <div style="height:12px"></div>
 
-      <div class="mini"><b>蓄電池比較</b></div>
+      <div class="mini"><b>蓄電池（容量候補）</b></div>
       <table class="table">
-        <thead><tr><th>#</th><th>製品</th><th>kWh</th><th>出力</th><th>卸ベース</th><th>保証</th></tr></thead>
-        <tbody>${batteryRows || '<tr><td colspan="6">蓄電池OFF</td></tr>'}</tbody>
+        <thead><tr><th>#</th><th>容量</th><th>B(z)（参考）</th></tr></thead>
+        <tbody>${batRows || '<tr><td colspan="3">蓄電池OFF</td></tr>'}</tbody>
       </table>
     `;
   }
 
-  function setResultVisible(visible) {
-    el('resultEmpty').classList.toggle('hidden', visible);
-    el('result').classList.toggle('hidden', !visible);
-    el('result').setAttribute('aria-hidden', visible ? 'false' : 'true');
+  // ---------------- Admin modal ----------------
+  function openAdminModal() {
+    el('adminModal').classList.remove('hidden');
+    el('adminModal').setAttribute('aria-hidden','false');
+
+    const unlocked = isAdminUnlocked();
+    el('adminLocked').classList.toggle('hidden', unlocked);
+    el('adminBody').classList.toggle('hidden', !unlocked);
+    el('adminBody').setAttribute('aria-hidden', unlocked ? 'false' : 'true');
+
+    // focus
+    (unlocked ? el('profitRate') : el('adminPasscode')).focus();
   }
 
-  function applyPresentationMode(on) {
-    document.body.classList.toggle('present', on);
-    el('btnPresent').textContent = on ? 'プレゼン解除' : 'プレゼン表示';
+  function closeAdminModal() {
+    el('adminModal').classList.add('hidden');
+    el('adminModal').setAttribute('aria-hidden','true');
   }
 
-  // ----- Init UI -----
-  let DATA = { panels: FALLBACK_PANELS, batteries: FALLBACK_BATTERIES };
-  let SETTINGS = getSettings();
-
-  function syncSettingsToUI() {
-    el('profitRate').value = SETTINGS.profitRatePct;
-    el('rangePct').value = SETTINGS.rangePct;
-    el('fixedFee').value = SETTINGS.fixedFeeYen;
-    el('defaultUnitPrice').value = SETTINGS.defaultUnitPrice;
-    el('coveragePct').value = SETTINGS.coveragePct;
-    el('pvYield').value = SETTINGS.pvYieldKwhPerKwMonth;
-    el('nightPct').value = SETTINGS.nightPct;
-    el('maxPvKw').value = SETTINGS.maxPvKw;
-    el('taxIncluded').checked = !!SETTINGS.taxIncluded;
-    el('showBreakdown').checked = !!SETTINGS.showBreakdown;
-    el('topN').value = String(SETTINGS.topN ?? 3);
-    el('fixedFeeLabel').textContent = formatYen(SETTINGS.fixedFeeYen);
-
-    const unlocked = isUnlocked();
-    el('settingsBody').classList.toggle('hidden', !unlocked);
-    el('settingsBody').setAttribute('aria-hidden', unlocked ? 'false' : 'true');
+  function syncSettingsToAdminUI(settings) {
+    el('profitRate').value = settings.profitRatePct;
+    el('fixedFee').value = settings.fixedFeeYen;
+    el('defaultUnitPrice').value = settings.defaultUnitPrice;
+    el('coveragePct').value = settings.coveragePct;
+    el('pvYield').value = settings.pvYieldKwhPerKwMonth;
+    el('nightPct').value = settings.nightPct;
+    el('maxPvKw').value = settings.maxPvKw;
+    el('topN').value = String(settings.topN ?? 3);
+    el('passcode').value = settings.passcode ?? DEFAULTS.passcode;
   }
 
-  function readSettingsFromUI() {
-    const next = { ...SETTINGS };
+  function readSettingsFromAdminUI(prev) {
+    const next = { ...prev };
     next.profitRatePct = Number(el('profitRate').value ?? DEFAULTS.profitRatePct);
-    next.rangePct = Number(el('rangePct').value ?? DEFAULTS.rangePct);
     next.fixedFeeYen = Number(el('fixedFee').value ?? DEFAULTS.fixedFeeYen);
     next.defaultUnitPrice = Number(el('defaultUnitPrice').value ?? DEFAULTS.defaultUnitPrice);
     next.coveragePct = Number(el('coveragePct').value ?? DEFAULTS.coveragePct);
     next.pvYieldKwhPerKwMonth = Number(el('pvYield').value ?? DEFAULTS.pvYieldKwhPerKwMonth);
     next.nightPct = Number(el('nightPct').value ?? DEFAULTS.nightPct);
     next.maxPvKw = Number(el('maxPvKw').value ?? DEFAULTS.maxPvKw);
-    next.taxIncluded = !!el('taxIncluded').checked;
-    next.showBreakdown = !!el('showBreakdown').checked;
     next.topN = Number(el('topN').value ?? DEFAULTS.topN);
+    next.passcode = String(el('passcode').value || DEFAULTS.passcode).trim() || DEFAULTS.passcode;
 
     // sanitize
     next.profitRatePct = clamp(next.profitRatePct, -50, 300);
-    next.rangePct = clamp(next.rangePct, 0, 30);
     next.fixedFeeYen = clamp(next.fixedFeeYen, 0, 99999);
     next.defaultUnitPrice = clamp(next.defaultUnitPrice, 1, 200);
     next.coveragePct = clamp(next.coveragePct, 10, 120);
     next.pvYieldKwhPerKwMonth = clamp(next.pvYieldKwhPerKwMonth, 50, 140);
     next.nightPct = clamp(next.nightPct, 10, 80);
     next.maxPvKw = clamp(next.maxPvKw, 0, 50);
+    next.topN = next.topN === 5 ? 5 : 3;
 
     return next;
   }
 
+  // ---------------- Main flow ----------------
+  let DATA = { panels: FALLBACK_PANELS, batterySizes: FALLBACK_BATTERY_SIZES };
+  let SETTINGS = getSettings();
+
+  function updateFixedFeeLabel() {
+    el('fixedFeeLabel').textContent = formatYen(SETTINGS.fixedFeeYen);
+  }
+
   function doCalc() {
-    SETTINGS = getSettings(); // refresh
+    SETTINGS = getSettings();
+
     const billYen = Number(el('billYen').value || 0);
     const unitPrice = Number(el('unitPrice').value || SETTINGS.defaultUnitPrice);
     const useBattery = !!el('useBattery').checked;
@@ -562,70 +424,84 @@
       maxPvKw: SETTINGS.maxPvKw
     });
 
-    const panelPick = choosePanelConfig({ panels: DATA.panels, pvKwTarget: pv.pvKw });
+    const panelPick = (() => {
+      const pick = chooseBestPanel(DATA.panels);
+      const countInfo = panelCountForKw({ panelWatt: pick.best.watt, pvKw: pv.pvKw });
+      return { ...pick, panelCount: countInfo.count, xActualKw: countInfo.actualKw };
+    })();
 
-    const batRec = recommendBatteryKwh({
+    const battery = recommendBattery({
       usageKwhMonth,
       nightPct: SETTINGS.nightPct,
-      batteries: DATA.batteries,
+      batterySizes: DATA.batterySizes,
       useBattery
     });
 
-    const totals = estimateTotal({
-      panel: panelPick.bestPanel,
-      panelCount: panelPick.panelCount,
-      battery: batRec.battery,
-      settings: SETTINGS
+    const x = panelPick.xActualKw;
+    const z = battery.z || 0;
+
+    const totals = estimatePriceRange({
+      x, z,
+      profitRatePct: SETTINGS.profitRatePct
     });
 
-    // Render top KPIs
+    // Render KPIs (note: profit rate is NOT shown anywhere)
     el('pillUsage').textContent = `使用量: ${usageKwhMonth.toFixed(0)}kWh/月（単価 ${unitPrice.toFixed(1)}円/kWh）`;
     el('pillGoal').textContent = `目標: ${pv.targetKwh.toFixed(0)}kWh/月（${SETTINGS.coveragePct}%）`;
-    el('pillMode').textContent = SETTINGS.taxIncluded ? '表示: 税込概算レンジ' : '表示: 税抜概算レンジ';
+    el('pillMode').textContent = `表示: 税込概算レンジ`;
 
-    const pvKwDisp = panelPick.actualKw.toFixed(2);
-    const panelW = panelPick.bestPanel.watt;
-    const panelCount = panelPick.panelCount;
-
-    let systemLine = `PV 約${pvKwDisp}kW（${panelCount}枚 × ${panelW}W）`;
-    let systemSub = `推奨: ${pv.pvKw.toFixed(2)}kW（目標ベース）`;
-    if (batRec.battery) {
-      systemLine += ` + 蓄電池 ${batRec.battery.kwh}kWh`;
-      systemSub += ` / 蓄電池目標 ${batRec.targetKwh.toFixed(1)}kWh`;
+    let systemLine = `PV 約${x.toFixed(2)}kW（${panelPick.panelCount}枚 × ${panelPick.best.watt}W）`;
+    let systemSub = `推奨: ${pv.pvKw.toFixed(1)}kW（目標ベース）`;
+    if (z > 0) {
+      systemLine += ` + 蓄電池 ${z.toFixed(1)}kWh`;
+      systemSub += ` / 蓄電池目標 ${battery.targetKwh.toFixed(1)}kWh`;
     }
 
     el('kpiSystem').innerHTML = systemLine;
     el('kpiSystemSub').textContent = systemSub;
 
     el('kpiPrice').innerHTML = `¥${formatYen(totals.min)} 〜 ¥${formatYen(totals.max)}`;
-    const pr = SETTINGS.profitRatePct;
-    const note = `利益率 ${pr}% / レンジ幅 ±${SETTINGS.rangePct}% / 固定費 ${formatYen(SETTINGS.fixedFeeYen)}円`;
-    el('kpiPriceNote').textContent = note;
+    el('kpiPriceNote').textContent = `中央値 ¥${formatYen(roundTo(totals.median, 10000))}（レンジ幅: ±¥${formatYen(roundTo(totals.delta, 1000))}）`;
 
     el('reasons').innerHTML = buildReasons({
+      billYen,
+      fixedFeeYen: SETTINGS.fixedFeeYen,
+      unitPrice,
       usageKwhMonth,
       variableYen,
-      unitPrice,
-      fixedFeeYen: SETTINGS.fixedFeeYen,
       pv,
-      panelPick,
-      batRec,
-      settings: SETTINGS,
-      billYen
+      xActual: x,
+      battery,
+      zActual: z
     });
 
-    el('candidates').innerHTML = renderCandidates({ panelPick, batRec, totals, settings: SETTINGS });
-    el('compare').innerHTML = renderCompare({ panelPick, batRec, settings: SETTINGS });
+    const topN = SETTINGS.topN ?? 3;
+    el('candidates').innerHTML = renderCandidates({
+      panelPick,
+      panelCount: panelPick.panelCount,
+      xActual: x,
+      battery,
+      zActual: z,
+      batterySizes: DATA.batterySizes,
+      topN
+    });
+
+    const batteryTop = (battery.ranking || []).slice(0, topN).sort((a,b)=>a-b);
+    el('compare').innerHTML = renderCompare({
+      panelPick,
+      topN,
+      batteryTop
+    });
 
     setResultVisible(true);
   }
 
   function resetAll() {
     localStorage.removeItem(LS_KEY);
-    localStorage.removeItem(LS_UNLOCK);
+    localStorage.removeItem(LS_ADMIN_UNLOCK);
     SETTINGS = { ...DEFAULTS };
     saveSettings(SETTINGS);
-    syncSettingsToUI();
+    updateFixedFeeLabel();
     setResultVisible(false);
     el('billYen').value = '';
     el('unitPrice').value = '';
@@ -633,17 +509,15 @@
     el('useBattery').checked = true;
   }
 
-  // ----- Wire events -----
+  // ---------------- Init ----------------
   async function init() {
-    // Load data first
     DATA = await loadData();
 
-    // Ensure defaults exist
     if (!localStorage.getItem(LS_KEY)) saveSettings({ ...DEFAULTS });
-
     SETTINGS = getSettings();
-    syncSettingsToUI();
+    updateFixedFeeLabel();
 
+    // Buttons
     el('btnCalc').addEventListener('click', doCalc);
 
     el('btnReset').addEventListener('click', () => {
@@ -655,37 +529,59 @@
       applyPresentationMode(on);
     });
 
-    el('btnUnlock').addEventListener('click', () => {
-      const pass = String(el('passcode').value || '');
+    // Admin open triggers: tiny button + Shift+9
+    el('btnAdmin').addEventListener('click', () => {
+      SETTINGS = getSettings();
+      syncSettingsToAdminUI(SETTINGS);
+      openAdminModal();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      const isShift9 = e.shiftKey && (e.code === 'Digit9' || e.key === '(' || e.key === ')');
+      if (isShift9) {
+        e.preventDefault();
+        SETTINGS = getSettings();
+        syncSettingsToAdminUI(SETTINGS);
+        openAdminModal();
+        return;
+      }
+      if (e.key === 'Escape' && !el('adminModal').classList.contains('hidden')) {
+        closeAdminModal();
+      }
+    });
+
+    // Admin modal controls
+    el('adminBackdrop').addEventListener('click', closeAdminModal);
+    el('btnAdminClose').addEventListener('click', closeAdminModal);
+
+    el('btnAdminUnlock').addEventListener('click', () => {
+      const pass = String(el('adminPasscode').value || '');
       const ok = pass === (getSettings().passcode || DEFAULTS.passcode);
       if (!ok) {
         alert('パスコードが違います。');
         return;
       }
-      setUnlocked(true);
-      syncSettingsToUI();
-      alert('工務店設定を表示しました。');
-    });
-
-    el('btnLock').addEventListener('click', () => {
-      setUnlocked(false);
-      syncSettingsToUI();
+      setAdminUnlocked(true);
+      SETTINGS = getSettings();
+      syncSettingsToAdminUI(SETTINGS);
+      el('adminLocked').classList.add('hidden');
+      el('adminBody').classList.remove('hidden');
+      el('adminBody').setAttribute('aria-hidden','false');
+      el('profitRate').focus();
     });
 
     el('btnSaveSettings').addEventListener('click', () => {
-      const next = readSettingsFromUI();
+      const prev = getSettings();
+      const next = readSettingsFromAdminUI(prev);
       saveSettings(next);
       SETTINGS = next;
-      syncSettingsToUI();
+      updateFixedFeeLabel();
       alert('設定を保存しました。');
-      // Recalc if already showing results
+      // Recalc if results are visible
       if (!el('result').classList.contains('hidden')) doCalc();
     });
 
-    // Display fixed fee label
-    el('fixedFeeLabel').textContent = formatYen(getSettings().fixedFeeYen);
-
-    // Quick calc on Enter in bill field
+    // Quick calc on Enter
     el('billYen').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') doCalc();
     });

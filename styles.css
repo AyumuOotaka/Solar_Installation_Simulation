@@ -221,3 +221,54 @@ body.present .subtitle{
 }
 body.present .main-grid{ grid-template-columns: 1fr 1.2fr; }
 body.present .card{ box-shadow:none; }
+
+
+/* Secret admin button */
+.secret-gear{
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.06);
+  opacity: .18;
+  cursor: pointer;
+  z-index: 30;
+}
+.secret-gear:hover{ opacity: .35; }
+
+/* Modal */
+.modal{
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+}
+.modal-backdrop{
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(6px);
+}
+.modal-card{
+  position: relative;
+  width: min(820px, 94vw);
+  max-height: min(82vh, 860px);
+  overflow: auto;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(17,24,36,.92);
+  box-shadow: var(--shadow);
+  padding: 16px;
+}
+.modal-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.modal-title{ font-weight: 800; letter-spacing: .2px; }
+.modal-sub{ color: var(--muted); font-size: 12px; margin-top: 4px; }

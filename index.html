@@ -56,97 +56,7 @@
       <div class="actions">
         <button id="btnCalc" class="btn btn-primary" type="button">診断する</button>
       </div>
-
-      <div class="divider"></div>
-
-      <details id="contractorPanel" class="details">
-        <summary>工務店設定（ロック）</summary>
-
-        <div class="lock-row">
-          <input id="passcode" type="password" placeholder="パスコード（暫定）" />
-          <button id="btnUnlock" class="btn" type="button">解除</button>
-          <button id="btnLock" class="btn btn-ghost" type="button">ロック</button>
-        </div>
-        <small class="hint">
-          ※静的サイトの「簡易ロック」です（本格ログインはサーバーが必要）。設定値は端末のlocalStorageに保存されます。
-        </small>
-
-        <div id="settingsBody" class="settings-body hidden" aria-hidden="true">
-          <div class="settings-grid">
-
-            <label class="field">
-              <span class="field-label">工務店 利益率（%）</span>
-              <input id="profitRate" type="number" inputmode="decimal" min="-50" max="200" step="0.5" />
-              <small class="hint">0%なら「弊社からの概算総額レンジ」。</small>
-            </label>
-
-            <label class="field">
-              <span class="field-label">レンジ幅（±%）</span>
-              <input id="rangePct" type="number" inputmode="decimal" min="0" max="30" step="0.5" />
-              <small class="hint">施工条件のブレを吸収するための幅。</small>
-            </label>
-
-            <label class="field">
-              <span class="field-label">固定費（円/月）</span>
-              <input id="fixedFee" type="number" inputmode="numeric" min="0" step="100" />
-              <small class="hint">電気代から使用量を推定する際に差し引きます。</small>
-            </label>
-
-            <label class="field">
-              <span class="field-label">未入力時の単価（円/kWh）</span>
-              <input id="defaultUnitPrice" type="number" inputmode="decimal" min="1" step="0.1" />
-            </label>
-
-            <label class="field">
-              <span class="field-label">自家消費で賄いたい割合（%）</span>
-              <input id="coveragePct" type="number" inputmode="decimal" min="10" max="120" step="1" />
-              <small class="hint">推奨パネル容量の“目標”に使います（後でロジック差し替え可）。</small>
-            </label>
-
-            <label class="field">
-              <span class="field-label">茨城の想定発電量（kWh/kW/月）</span>
-              <input id="pvYield" type="number" inputmode="decimal" min="50" max="140" step="1" />
-              <small class="hint">概算用（後で差し替え可）。</small>
-            </label>
-
-            <label class="field">
-              <span class="field-label">夜間比率（%）</span>
-              <input id="nightPct" type="number" inputmode="decimal" min="10" max="80" step="1" />
-              <small class="hint">蓄電池容量の目標に使います（節約用途）。</small>
-            </label>
-
-            <label class="field">
-              <span class="field-label">PV上限（kW）</span>
-              <input id="maxPvKw" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0 = 無制限" />
-              <small class="hint">屋根制限の代替。0なら無制限。</small>
-            </label>
-
-            <label class="field inline">
-              <input id="taxIncluded" type="checkbox" checked />
-              <span>税込で表示（消費税10%）</span>
-            </label>
-
-            <label class="field inline">
-              <input id="showBreakdown" type="checkbox" />
-              <span>内訳を表示（工務店のみ）</span>
-            </label>
-
-            <label class="field">
-              <span class="field-label">表示候補数</span>
-              <select id="topN">
-                <option value="3" selected>3件</option>
-                <option value="5">5件</option>
-              </select>
-            </label>
-
-          </div>
-
-          <div class="settings-actions">
-            <button id="btnSaveSettings" class="btn btn-primary" type="button">設定を保存</button>
-          </div>
-        </div>
-      </details>
-    </section>
+</section>
 
     <!-- Right: Results -->
     <section class="card">
@@ -205,5 +115,95 @@
   </footer>
 
   <script src="./app.js"></script>
+
+  <!-- Secret admin button (contractor only) -->
+  <button id="btnAdmin" class="secret-gear" type="button" aria-label="工務店設定"></button>
+
+  <div id="adminModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop" id="adminBackdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="adminTitle">
+      <div class="modal-header">
+        <div>
+          <div id="adminTitle" class="modal-title">工務店設定（非表示）</div>
+          <div class="modal-sub">※ここで設定した値は「見積りレンジ」にのみ影響します。</div>
+        </div>
+        <button id="btnAdminClose" class="btn btn-ghost" type="button">閉じる</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div id="adminLocked">
+        <div class="lock-row">
+          <input id="adminPasscode" type="password" placeholder="パスコード" />
+          <button id="btnAdminUnlock" class="btn btn-primary" type="button">解除</button>
+        </div>
+        <small class="hint">※静的サイトの簡易ロックです（本格ログインはサーバーが必要）。</small>
+      </div>
+
+      <div id="adminBody" class="hidden" aria-hidden="true">
+        <div class="settings-grid">
+
+          <label class="field">
+            <span class="field-label">工務店 利益率（%）</span>
+            <input id="profitRate" type="number" inputmode="decimal" min="-50" max="200" step="0.5" />
+            <small class="hint">※表・結果画面には表示されません。</small>
+          </label>
+
+          <label class="field">
+            <span class="field-label">固定費（円/月）</span>
+            <input id="fixedFee" type="number" inputmode="numeric" min="0" step="100" />
+          </label>
+
+          <label class="field">
+            <span class="field-label">未入力時の単価（円/kWh）</span>
+            <input id="defaultUnitPrice" type="number" inputmode="decimal" min="1" step="0.1" />
+          </label>
+
+          <label class="field">
+            <span class="field-label">自家消費で賄いたい割合（%）</span>
+            <input id="coveragePct" type="number" inputmode="decimal" min="10" max="120" step="1" />
+          </label>
+
+          <label class="field">
+            <span class="field-label">茨城の想定発電量（kWh/kW/月）</span>
+            <input id="pvYield" type="number" inputmode="decimal" min="50" max="140" step="1" />
+          </label>
+
+          <label class="field">
+            <span class="field-label">夜間比率（%）</span>
+            <input id="nightPct" type="number" inputmode="decimal" min="10" max="80" step="1" />
+          </label>
+
+          <label class="field">
+            <span class="field-label">PV上限（kW）</span>
+            <input id="maxPvKw" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0 = 無制限" />
+          </label>
+
+          <label class="field">
+            <span class="field-label">表示候補数</span>
+            <select id="topN">
+              <option value="3" selected>3件</option>
+              <option value="5">5件</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field-label">パスコード（変更）</span>
+            <input id="passcode" type="text" placeholder="例）ogw" />
+            <small class="hint">変更すると次回から新しいパスコードで解除します。</small>
+          </label>
+
+        </div>
+
+        <div class="settings-actions">
+          <button id="btnSaveSettings" class="btn btn-primary" type="button">保存</button>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <small class="hint">開き方：右下の小さいボタン / ショートカット（Shift + 9）</small>
+    </div>
+  </div>
+
 </body>
 </html>
