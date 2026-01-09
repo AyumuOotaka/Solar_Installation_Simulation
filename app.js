@@ -18,7 +18,7 @@
     profitTolYen: 100000,
     roiTolPt: 2.0,              // percentage points
     paybackTolY: 1.5,
-    showDebug: false,
+    showDebug: true,
     passcode: 'ogw'
   };
 
@@ -233,6 +233,7 @@
   }
 
   function pickCandidates(all, settings) {
+    // Best values
     let bestProfit = -Infinity, bestROI = -Infinity, bestPayback = Infinity;
     for (const a of all) {
       if (a.netProfit > bestProfit) bestProfit = a.netProfit;
@@ -250,7 +251,7 @@
         }, null)
       : null;
 
-    // Balanced: nearest to ideal after normalization
+    // Balanced: nearest to ideal after normalization (profit↑, ROI↑, payback↓)
     const profits = all.map(a => a.netProfit);
     const rois = all.map(a => a.roi);
     const paybacks = all.map(a => Number.isFinite(a.payback) ? a.payback : 99);
@@ -263,7 +264,7 @@
     const normPay = (v) => {
       const vv = Number.isFinite(v) ? v : 99;
       const n = (maxB - minB) > 1e-9 ? (vv - minB) / (maxB - minB) : 1;
-      return 1 - clamp(n, 0, 1); // smaller is better
+      return 1 - clamp(n, 0, 1); // smaller payback is better
     };
 
     let balanced = all[0];
@@ -273,21 +274,11 @@
       const rn = clamp(norm(a.roi, minR, maxR), 0, 1);
       const bn = clamp(normPay(a.payback), 0, 1);
       const dist = (1 - pn) ** 2 + (1 - rn) ** 2 + (1 - bn) ** 2;
+      a._balancedDist = dist; // keep for debug/ranking
       if (dist < bestDist) { bestDist = dist; balanced = a; }
     }
 
-    const tolProfit = settings.profitTolYen;
-    const tolROI = settings.roiTolPt / 100; // pt -> fraction
-    const tolPB = settings.paybackTolY;
-
-    const okProfit = (cand) => cand.netProfit >= bestProfit - tolProfit;
-    const okROI = (cand) => cand.roi >= bestROI - tolROI;
-    const okPB = (cand) => {
-      if (bestPayback === Infinity) return true;
-      if (!Number.isFinite(cand.payback)) return false;
-      return cand.payback <= bestPayback + tolPB;
-    };
-
+    // IMPORTANT: "明確に劣る" 除外ロジックはOFF（デバッグ用）
     const candidates = [];
     const push = (type, cand) => {
       if (!cand) return;
@@ -296,29 +287,15 @@
       candidates.push({ type, key, cand });
     };
 
-    if (okROI(profitWinner) && okPB(profitWinner)) push('利益最大', profitWinner);
-    if (okProfit(roiWinner) && okPB(roiWinner)) push('ROI最大', roiWinner);
-    if (paybackWinner && okProfit(paybackWinner) && okROI(paybackWinner)) push('回収最短', paybackWinner);
-
-    // Balanced: require at least 2-of-3 within tolerance
-    const bOK = [okProfit(balanced), okROI(balanced), okPB(balanced)].filter(Boolean).length >= 2;
-    if (bOK) push('バランス', balanced);
-
-    if (!candidates.length) push('利益最大', profitWinner);
+    push('利益最大', profitWinner);
+    push('ROI最大', roiWinner);
+    if (paybackWinner) push('回収最短', paybackWinner);
+    push('バランス', balanced);
 
     return { candidates: candidates.slice(0, 4), stats: { bestProfit, bestROI, bestPayback } };
   }
 
-  function escapeHtml(s) {
-    return String(s ?? '')
-      .replaceAll('&','&amp;')
-      .replaceAll('<','&lt;')
-      .replaceAll('>','&gt;')
-      .replaceAll('"','&quot;')
-      .replaceAll("'","&#39;");
-  }
-
-  function renderPlans(picks, unitPrice) {
+function renderPlans(picks, unitPrice) {
     return picks.candidates.map(({ type, cand }) => {
       const pv = cand.pvKw.toFixed(2);
       const bat = cand.batKwh > 0 ? cand.batKwh.toFixed(1) + 'kWh' : 'なし';
@@ -451,28 +428,198 @@
     return next;
   }
 
-  function renderDebug(picks, settings, billYen, unitPrice) {
-    if (!settings.showDebug) return '';
+  
+  function comboKey(a) {
+    return `${a.pvKw.toFixed(2)}|${a.batKwh.toFixed(1)}`;
+  }
+
+  function computeRanks(evals) {
+    const rankMap = new Map();
+
+    const byProfit = [...evals].sort((a,b) => b.netProfit - a.netProfit);
+    byProfit.forEach((a,i) => {
+      const k = comboKey(a);
+      const cur = rankMap.get(k) || {};
+      cur.profitRank = i + 1;
+      rankMap.set(k, cur);
+    });
+
+    const byROI = [...evals].sort((a,b) => b.roi - a.roi);
+    byROI.forEach((a,i) => {
+      const k = comboKey(a);
+      const cur = rankMap.get(k) || {};
+      cur.roiRank = i + 1;
+      rankMap.set(k, cur);
+    });
+
+    const byPB = [...evals].sort((a,b) => {
+      const ap = Number.isFinite(a.payback) ? a.payback : 1e9;
+      const bp = Number.isFinite(b.payback) ? b.payback : 1e9;
+      return ap - bp;
+    });
+    byPB.forEach((a,i) => {
+      const k = comboKey(a);
+      const cur = rankMap.get(k) || {};
+      cur.paybackRank = i + 1;
+      rankMap.set(k, cur);
+    });
+
+    const byBal = [...evals].sort((a,b) => (a._balancedDist ?? 1e9) - (b._balancedDist ?? 1e9));
+    byBal.forEach((a,i) => {
+      const k = comboKey(a);
+      const cur = rankMap.get(k) || {};
+      cur.balancedRank = i + 1;
+      rankMap.set(k, cur);
+    });
+
+    const topN = (arr, n, mapper) => arr.slice(0, n).map(mapper);
+
+    const topProfit = topN(byProfit, 10, a => ({
+      key: comboKey(a),
+      pvKw: a.pvKw,
+      batKwh: a.batKwh,
+      netProfitYen: Math.round(a.netProfit),
+      roiPct: Number((a.roi * 100).toFixed(2)),
+      paybackY: Number.isFinite(a.payback) ? Number(a.payback.toFixed(2)) : null
+    }));
+
+    const topROI = topN(byROI, 10, a => ({
+      key: comboKey(a),
+      pvKw: a.pvKw,
+      batKwh: a.batKwh,
+      roiPct: Number((a.roi * 100).toFixed(2)),
+      netProfitYen: Math.round(a.netProfit),
+      paybackY: Number.isFinite(a.payback) ? Number(a.payback.toFixed(2)) : null
+    }));
+
+    const topPB = topN(byPB, 10, a => ({
+      key: comboKey(a),
+      pvKw: a.pvKw,
+      batKwh: a.batKwh,
+      paybackY: Number.isFinite(a.payback) ? Number(a.payback.toFixed(2)) : null,
+      netProfitYen: Math.round(a.netProfit),
+      roiPct: Number((a.roi * 100).toFixed(2)),
+    }));
+
+    const topBalanced = topN(byBal, 10, a => ({
+      key: comboKey(a),
+      pvKw: a.pvKw,
+      batKwh: a.batKwh,
+      balancedDist: Number((a._balancedDist ?? 0).toFixed(6)),
+      netProfitYen: Math.round(a.netProfit),
+      roiPct: Number((a.roi * 100).toFixed(2)),
+      paybackY: Number.isFinite(a.payback) ? Number(a.payback.toFixed(2)) : null
+    }));
+
+    return { rankMap, topProfit, topROI, topPB, topBalanced };
+  }
+
+  function logDebugToConsole({ evals, picks, ranks, settings, billYen, unitPrice }) {
+    const unlocked = isUnlocked();
+    if (!unlocked || !settings.showDebug) return;
+
+    console.groupCollapsed(`SolarSelector Debug | bill=${billYen} unit=${unitPrice}`);
+    console.log('Settings:', {
+      fixedFeeYen: settings.fixedFeeYen,
+      nightPct: settings.nightPct,
+      pvYieldPerKwDay: settings.pvYieldPerKwDay,
+      pvRange: [settings.pvMinKw, settings.pvMaxKw, settings.pvStepKw],
+      profitRatePct: settings.profitRatePct,
+      batterySizes: BATTERY_SIZES,
+      tariffs: TARIFFS
+    });
+
+    console.groupCollapsed('Top10 (利益/ROI/回収/バランス)');
+    console.table(ranks.topProfit);
+    console.table(ranks.topROI);
+    console.table(ranks.topPB);
+    console.table(ranks.topBalanced);
+    console.groupEnd();
+
+    const candRows = picks.candidates.map(({ type, cand }) => {
+      const k = comboKey(cand);
+      const r = ranks.rankMap.get(k) || {};
+      return {
+        type,
+        key: k,
+        pvKw: cand.pvKw,
+        batKwh: cand.batKwh,
+        price_baseMedian: Math.round(cand.price.baseMedian),
+        price_profitAppliedMedian: Math.round(cand.price.median),
+        price_width: Math.round(cand.price.width),
+        price_rangeMin: Math.round(cand.price.min),
+        price_rangeMax: Math.round(cand.price.max),
+        econ_avoid15: Math.round(cand.econ.avoid15),
+        econ_revenue15: Math.round(cand.econ.revenue15),
+        econ_benefit15: Math.round(cand.econ.benefit15),
+        netProfit15: Math.round(cand.netProfit),
+        roiPct: Number((cand.roi * 100).toFixed(2)),
+        paybackY: Number.isFinite(cand.payback) ? Number(cand.payback.toFixed(2)) : null,
+        rankProfit: r.profitRank,
+        rankROI: r.roiRank,
+        rankPayback: r.paybackRank,
+        rankBalanced: r.balancedRank,
+        flow_pvGen_kWhDay: Number(cand.econ.flows.pvGen.toFixed(2)),
+        flow_self_kWhDay: Number(cand.econ.flows.selfConsumption.toFixed(2)),
+        flow_sold_kWhDay: Number(cand.econ.flows.pvSold.toFixed(2)),
+      };
+    });
+    console.table(candRows);
+    console.groupEnd();
+  }
+
+  function renderDebug(evals, picks, ranks, settings, billYen, unitPrice) {
+    const unlocked = isUnlocked();
+    if (!unlocked || !settings.showDebug) return '';
+
     const lines = [];
     lines.push('--- DEBUG (工務店のみ) ---');
     lines.push(`billYen=${billYen} unitPrice=${unitPrice}`);
-    lines.push(`nightPct=${settings.nightPct} pvYieldPerKwDay=${settings.pvYieldPerKwDay}`);
+    lines.push(`fixedFeeYen=${settings.fixedFeeYen} nightPct=${settings.nightPct} pvYieldPerKwDay=${settings.pvYieldPerKwDay}`);
+    lines.push(`profitRatePct=${settings.profitRatePct}`);
     lines.push(`PV range: ${settings.pvMinKw}..${settings.pvMaxKw} step ${settings.pvStepKw}`);
-    lines.push(`battery count=${BATTERY_SIZES.length}`);
+    lines.push(`battery sizes (count=${BATTERY_SIZES.length}): ${BATTERY_SIZES.join(', ')}`);
     lines.push(`tariffs: ${TARIFFS.map(t => `[${t.startYear}-${t.endYear}:${t.yenPerKwh}]`).join(' ')}`);
-    lines.push(`bestProfit=${Math.round(picks.stats.bestProfit)} bestROI=${picks.stats.bestROI.toFixed(4)} bestPayback=${picks.stats.bestPayback}`);
+    lines.push(`bestProfit=${Math.round(picks.stats.bestProfit)} bestROI=${picks.stats.bestROI.toFixed(6)} bestPayback=${picks.stats.bestPayback}`);
+    lines.push('');
+    lines.push('--- TOP10 (利益) ---');
+    for (const row of ranks.topProfit) {
+      const r = ranks.rankMap.get(row.key) || {};
+      lines.push(`  #${r.profitRank} ${row.key} profit=${row.netProfitYen} roi=${row.roiPct}% pb=${row.paybackY ?? 'Inf'}`);
+    }
+    lines.push('');
+    lines.push('--- TOP10 (ROI) ---');
+    for (const row of ranks.topROI) {
+      const r = ranks.rankMap.get(row.key) || {};
+      lines.push(`  #${r.roiRank} ${row.key} roi=${row.roiPct}% profit=${row.netProfitYen} pb=${row.paybackY ?? 'Inf'}`);
+    }
+    lines.push('');
+    lines.push('--- TOP10 (回収) ---');
+    for (const row of ranks.topPB) {
+      const r = ranks.rankMap.get(row.key) || {};
+      lines.push(`  #${r.paybackRank} ${row.key} pb=${row.paybackY ?? 'Inf'} profit=${row.netProfitYen} roi=${row.roiPct}%`);
+    }
+    lines.push('');
+    lines.push('--- 推奨候補（なぜ選ばれたか） ---');
+    lines.push('※除外ロジックはOFF（デバッグ用）。各軸の勝者をそのまま表示。');
     lines.push('');
     for (const c of picks.candidates) {
       const a = c.cand;
-      lines.push(`[${c.type}] PV=${a.pvKw.toFixed(2)}kW bat=${a.batKwh.toFixed(1)}kWh`);
-      lines.push(`  price median=${Math.round(a.price.median)} (base=${Math.round(a.price.baseMedian)}) width=${Math.round(a.price.width)}`);
-      lines.push(`  netProfit=${Math.round(a.netProfit)} ROI=${a.roi.toFixed(4)} payback=${Number.isFinite(a.payback)?a.payback.toFixed(2):'Inf'}`);
-      lines.push(`  flows: pvGen=${a.econ.flows.pvGen.toFixed(2)} self=${a.econ.flows.selfConsumption.toFixed(2)} sold=${a.econ.flows.pvSold.toFixed(2)}`);
+      const key = comboKey(a);
+      const r = ranks.rankMap.get(key) || {};
+      lines.push(`[${c.type}] key=${key} rankProfit=${r.profitRank} rankROI=${r.roiRank} rankPB=${r.paybackRank} rankBal=${r.balancedRank}`);
+      lines.push(`  PV=${a.pvKw.toFixed(2)}kW  bat=${a.batKwh.toFixed(1)}kWh`);
+      lines.push(`  PRICE: baseMedian=${Math.round(a.price.baseMedian)} median(afterProfit)=${Math.round(a.price.median)} width=±${Math.round(a.price.width)} range=[${Math.round(a.price.min)}..${Math.round(a.price.max)}]`);
+      lines.push(`  FLOWS(kWh/day): pvGen=${a.econ.flows.pvGen.toFixed(2)} pvToDay=${a.econ.flows.pvToDay.toFixed(2)} batCharge=${a.econ.flows.batCharge.toFixed(2)} sold=${a.econ.flows.pvSold.toFixed(2)} batToNight=${a.econ.flows.batToNight.toFixed(2)} self=${a.econ.flows.selfConsumption.toFixed(2)} grid=${a.econ.flows.gridTotal.toFixed(2)}`);
+      lines.push(`  ECON: avoid15=${Math.round(a.econ.avoid15)} revenue15=${Math.round(a.econ.revenue15)} benefit15=${Math.round(a.econ.benefit15)}`);
+      lines.push(`  METRICS: netProfit15=${Math.round(a.netProfit)} ROI=${(a.roi*100).toFixed(2)}% payback=${Number.isFinite(a.payback)?a.payback.toFixed(2):'Inf'}y`);
+      lines.push('');
     }
     return lines.join('\n');
   }
 
-  function doCalc() {
+
+function doCalc() {
     const settings = getSettings();
     const billYen = Number(el('billYen').value || 0);
     const unitPrice = Number(el('unitPrice').value || settings.defaultUnitPrice);
@@ -503,14 +650,19 @@
     }
 
     const picks = pickCandidates(evals, settings);
+    const ranks = computeRanks(evals);
+
     el('plans').innerHTML = renderPlans(picks, unitPrice);
 
-    el('planNote').textContent = '※抽出順：利益最大→ROI最大→回収最短→バランス（他指標で“明確に劣る”案は除外）';
+    el('planNote').textContent = '※抽出順：利益最大→ROI最大→回収最短→バランス（デバッグ：除外ロジックOFF）';
 
-    const dbg = renderDebug(picks, settings, billYen, unitPrice);
+    const dbg = renderDebug(evals, picks, ranks, settings, billYen, unitPrice);
     el('debugBox').textContent = dbg;
-    el('debugBox').classList.toggle('hidden', !settings.showDebug);
-    el('debugBox').setAttribute('aria-hidden', settings.showDebug ? 'false' : 'true');
+    const showDbg = isUnlocked() && settings.showDebug;
+    el('debugBox').classList.toggle('hidden', !showDbg);
+    el('debugBox').setAttribute('aria-hidden', showDbg ? 'false' : 'true');
+
+    logDebugToConsole({ evals, picks, ranks, settings, billYen, unitPrice });
 
     setResultVisible(true);
   }
