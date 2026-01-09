@@ -243,7 +243,68 @@
   }
 
   function pickCandidates(all, settings) {
-    // Best values
+    const useBattery = !!settings.useBattery;
+
+    const noBat = all.filter(a => a.batKwh === 0);
+    const withBat = all.filter(a => a.batKwh > 0);
+
+    function keyOf(a) { return `${a.pvKw.toFixed(2)}|${a.batKwh.toFixed(1)}`; }
+
+    function pickTwo(arr, prefix) {
+      if (!arr.length) return [];
+      const profitWinner = arr.reduce((p,c) => (c.netProfit > p.netProfit ? c : p), arr[0]);
+
+      const finitePB = arr.filter(a => Number.isFinite(a.payback));
+      const paybackWinner = finitePB.length
+        ? finitePB.reduce((p,c) => (c.payback < p.payback ? c : p), finitePB[0])
+        : null;
+
+      const out = [];
+
+      const push = (label, cand) => {
+        if (!cand) return false;
+        const key = keyOf(cand);
+        if (out.some(x => x.key === key)) return false;
+        out.push({ type: `${prefix}${label}`, key, cand });
+        return true;
+      };
+
+      push('純利益最大', profitWinner);
+
+      // Payback: if same as profit winner, choose next best payback
+      if (paybackWinner && keyOf(paybackWinner) !== keyOf(profitWinner)) {
+        push('回収年数最小', paybackWinner);
+      } else {
+        // find next best payback (finite) excluding profitWinner
+        let alt = null;
+        if (finitePB.length) {
+          const sorted = [...finitePB].sort((a,b) => a.payback - b.payback);
+          alt = sorted.find(a => keyOf(a) !== keyOf(profitWinner)) || null;
+        }
+        if (alt) {
+          push('回収年数最小', alt);
+        } else {
+          // fallback: next best profit
+          const sortedP = [...arr].sort((a,b) => b.netProfit - a.netProfit);
+          const altP = sortedP.find(a => keyOf(a) !== keyOf(profitWinner)) || null;
+          if (altP) push('回収年数最小', altP);
+          else push('回収年数最小', profitWinner);
+        }
+      }
+
+      return out.slice(0, 2);
+    }
+
+    const candidates = [];
+    // Always show PV-only 2 plans
+    candidates.push(...pickTwo(noBat, 'PVのみ：'));
+
+    // If user enabled battery mode, also show battery plans (2)
+    if (useBattery) {
+      candidates.push(...pickTwo(withBat, '蓄電池あり：'));
+    }
+
+    // stats (overall)
     let bestProfit = -Infinity, bestROI = -Infinity, bestPayback = Infinity;
     for (const a of all) {
       if (a.netProfit > bestProfit) bestProfit = a.netProfit;
@@ -251,58 +312,7 @@
       if (Number.isFinite(a.payback) && a.payback < bestPayback) bestPayback = a.payback;
     }
 
-    const profitWinner = all.reduce((p,c) => (c.netProfit > p.netProfit ? c : p), all[0]);
-    const roiWinner = all.reduce((p,c) => (c.roi > p.roi ? c : p), all[0]);
-    const paybackWinner = bestPayback < Infinity
-      ? all.reduce((p,c) => {
-          if (!Number.isFinite(c.payback)) return p;
-          if (!p || c.payback < p.payback) return c;
-          return p;
-        }, null)
-      : null;
-
-    // Balanced: nearest to ideal after normalization (profit↑, ROI↑, payback↓)
-    const profits = all.map(a => a.netProfit);
-    const rois = all.map(a => a.roi);
-    const paybacks = all.map(a => Number.isFinite(a.payback) ? a.payback : 99);
-
-    const minP = Math.min(...profits), maxP = Math.max(...profits);
-    const minR = Math.min(...rois), maxR = Math.max(...rois);
-    const minB = Math.min(...paybacks), maxB = Math.max(...paybacks);
-
-    const norm = (v, lo, hi) => (hi - lo) > 1e-9 ? (v - lo) / (hi - lo) : 1;
-    const normPay = (v) => {
-      const vv = Number.isFinite(v) ? v : 99;
-      const n = (maxB - minB) > 1e-9 ? (vv - minB) / (maxB - minB) : 1;
-      return 1 - clamp(n, 0, 1); // smaller payback is better
-    };
-
-    let balanced = all[0];
-    let bestDist = Infinity;
-    for (const a of all) {
-      const pn = clamp(norm(a.netProfit, minP, maxP), 0, 1);
-      const rn = clamp(norm(a.roi, minR, maxR), 0, 1);
-      const bn = clamp(normPay(a.payback), 0, 1);
-      const dist = (1 - pn) ** 2 + (1 - rn) ** 2 + (1 - bn) ** 2;
-      a._balancedDist = dist; // keep for debug/ranking
-      if (dist < bestDist) { bestDist = dist; balanced = a; }
-    }
-
-    // IMPORTANT: "明確に劣る" 除外ロジックはOFF（デバッグ用）
-    const candidates = [];
-    const push = (type, cand) => {
-      if (!cand) return;
-      const key = `${cand.pvKw.toFixed(2)}|${cand.batKwh.toFixed(1)}`;
-      if (candidates.some(x => x.key === key)) return;
-      candidates.push({ type, key, cand });
-    };
-
-    push('利益最大', profitWinner);
-    push('ROI最大', roiWinner);
-    if (paybackWinner) push('回収最短', paybackWinner);
-    push('バランス', balanced);
-
-    return { candidates: candidates.slice(0, 4), stats: { bestProfit, bestROI, bestPayback } };
+    return { candidates, stats: { bestProfit, bestROI, bestPayback } };
   }
 
 function renderPlans(picks, unitPrice) {
@@ -611,7 +621,7 @@ function renderPlans(picks, unitPrice) {
     }
     lines.push('');
     lines.push('--- 推奨候補（なぜ選ばれたか） ---');
-    lines.push('※除外ロジックはOFF（デバッグ用）。各軸の勝者をそのまま表示。');
+    lines.push('※除外ロジックはOFF（デバッグ用）。PVのみ2件＋（蓄電池ありON時）蓄電池あり2件を表示。');
     lines.push('');
     for (const c of picks.candidates) {
       const a = c.cand;
@@ -634,6 +644,7 @@ function doCalc() {
     const billYen = Number(el('billYen').value || 0);
     const unitPrice = Number(el('unitPrice').value || settings.defaultUnitPrice);
     const useBattery = !!el('useBattery').checked;
+    settings.useBattery = useBattery;
 
     if (!billYen || billYen <= 0) {
       alert('月の電気代（円）を入力してください。');
@@ -664,7 +675,7 @@ function doCalc() {
 
     el('plans').innerHTML = renderPlans(picks, unitPrice);
 
-    el('planNote').textContent = '※抽出順：利益最大→ROI最大→回収最短→バランス（デバッグ：除外ロジックOFF）';
+    el('planNote').textContent = '※表示：PVのみ（純利益最大/回収最短）＋（蓄電池ありON時）蓄電池あり（純利益最大/回収最短）';
 
     const dbg = renderDebug(evals, picks, ranks, settings, billYen, unitPrice);
     el('debugBox').textContent = dbg;
