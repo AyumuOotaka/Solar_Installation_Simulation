@@ -1,0 +1,71 @@
+[
+  {
+    "id": "bat_d",
+    "maker": "MakerD",
+    "model": "Mini 5.0",
+    "kwh": 5.0,
+    "outputKw": 2.5,
+    "warrantyYears": 10,
+    "tags": [
+      "低価格",
+      "節約"
+    ],
+    "baseUnitYen": 560000,
+    "baseInstallYen": 170000
+  },
+  {
+    "id": "bat_a",
+    "maker": "MakerA",
+    "model": "Saver 6.5",
+    "kwh": 6.5,
+    "outputKw": 3.0,
+    "warrantyYears": 10,
+    "tags": [
+      "節約",
+      "標準"
+    ],
+    "baseUnitYen": 680000,
+    "baseInstallYen": 180000
+  },
+  {
+    "id": "bat_e",
+    "maker": "MakerE",
+    "model": "Balance 8.0",
+    "kwh": 8.0,
+    "outputKw": 3.5,
+    "warrantyYears": 12,
+    "tags": [
+      "バランス"
+    ],
+    "baseUnitYen": 760000,
+    "baseInstallYen": 190000
+  },
+  {
+    "id": "bat_b",
+    "maker": "MakerB",
+    "model": "Saver 9.8",
+    "kwh": 9.8,
+    "outputKw": 4.0,
+    "warrantyYears": 10,
+    "tags": [
+      "節約",
+      "人気"
+    ],
+    "baseUnitYen": 860000,
+    "baseInstallYen": 200000
+  },
+  {
+    "id": "bat_c",
+    "maker": "MakerC",
+    "model": "Premium 12.7",
+    "kwh": 12.7,
+    "outputKw": 5.5,
+    "warrantyYears": 15,
+    "tags": [
+      "大容量",
+      "高保証"
+    ],
+    "baseUnitYen": 1150000,
+    "baseInstallYen": 220000
+  }
+]
