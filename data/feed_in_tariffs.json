@@ -1,0 +1,17 @@
+[
+  {
+    "startYear": 1,
+    "endYear": 4,
+    "yenPerKwh": 24.0
+  },
+  {
+    "startYear": 5,
+    "endYear": 10,
+    "yenPerKwh": 8.3
+  },
+  {
+    "startYear": 11,
+    "endYear": 15,
+    "yenPerKwh": 8.5
+  }
+]

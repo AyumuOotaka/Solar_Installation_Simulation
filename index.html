@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>太陽光・蓄電池 簡易選定（工務店向け）</title>
+  <title>太陽光・蓄電池 15年最適化（工務店向け）</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <header class="app-header">
     <div class="container">
       <div class="title-wrap">
-        <h1>太陽光・蓄電池 簡易選定（茨城 / 工務店向け）</h1>
-        <p class="subtitle">電気代から概算 → 推奨容量 → 候補（コスパ） → 概算総額レンジ</p>
+        <h1>太陽光・蓄電池 15年最適化（茨城 / 工務店向け）</h1>
+        <p class="subtitle">入力（電気代）→ 概算 → 15年評価（利益/ROI/回収）→ 推奨案</p>
       </div>
 
       <div class="header-actions">
@@ -22,43 +22,40 @@
   </header>
 
   <main class="container main-grid" id="main">
-    <!-- Left: Inputs -->
     <section class="card">
-      <h2>入力（最短）</h2>
+      <h2>入力</h2>
 
       <div class="form-grid">
         <label class="field">
           <span class="field-label">月の電気代（円）</span>
-          <input id="billYen" type="number" inputmode="numeric" min="0" placeholder="例）15000" />
-          <small class="hint">固定費 <span id="fixedFeeLabel"></span> 円を差し引いて使用量を推定します。</small>
+          <input id="billYen" type="number" inputmode="numeric" min="0" placeholder="例）38000" />
+          <small class="hint">固定費は内部設定（既定: <span id="fixedFeeLabel"></span>円）。</small>
         </label>
 
         <label class="field">
           <span class="field-label">電気単価（円/kWh）</span>
-          <input id="unitPrice" type="number" inputmode="decimal" min="1" step="0.1" placeholder="未入力なら 34" />
+          <input id="unitPrice" type="number" inputmode="decimal" min="1" step="0.1" placeholder="未入力なら既定値" />
           <small class="hint">未入力の場合は既定値で計算します。</small>
-        </label>
-
-        <label class="field">
-          <span class="field-label">オール電化</span>
-          <select id="allElectric">
-            <option value="no" selected>いいえ</option>
-            <option value="yes">はい</option>
-          </select>
         </label>
 
         <label class="field inline">
           <input id="useBattery" type="checkbox" checked />
-          <span>蓄電池を含める（節約重視）</span>
+          <span>蓄電池を含める（余剰→充電→夜使用→余剰は売電）</span>
         </label>
       </div>
 
       <div class="actions">
         <button id="btnCalc" class="btn btn-primary" type="button">診断する</button>
       </div>
-</section>
 
-    <!-- Right: Results -->
+      <div class="divider"></div>
+
+      <div class="mini">
+        <b>※施主に見せる情報は最小化</b><br/>
+        内部の前提や計算式は、右下（または Shift+9）から工務店設定で確認できます。
+      </div>
+    </section>
+
     <section class="card">
       <h2>結果</h2>
 
@@ -70,83 +67,47 @@
         <div class="result-top">
           <div class="pill-row">
             <span class="pill" id="pillUsage">使用量: -</span>
-            <span class="pill" id="pillGoal">目標: -</span>
-            <span class="pill" id="pillMode">表示: 概算レンジ</span>
+            <span class="pill" id="pillTariff">売電: -</span>
           </div>
 
-          <div class="summary-grid">
-            <div class="summary-card">
-              <h3>推奨構成</h3>
-              <div class="kpi" id="kpiSystem">-</div>
-              <div class="kpi-sub" id="kpiSystemSub">-</div>
-            </div>
-
-            <div class="summary-card">
-              <h3>概算総額（レンジ）</h3>
-              <div class="kpi" id="kpiPrice">-</div>
-              <div class="kpi-sub" id="kpiPriceNote">-</div>
-            </div>
+          <div class="section">
+            <h3>推奨案（最大4つ）</h3>
+            <div id="plans" class="plan-grid"></div>
+            <div class="mini muted" id="planNote"></div>
           </div>
-
-          <div class="reasons" id="reasons"></div>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="section">
-          <h3>おすすめ候補（上位）</h3>
-          <div id="candidates"></div>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="section">
-          <h3>比較（簡易）</h3>
-          <div id="compare"></div>
         </div>
       </div>
     </section>
   </main>
 
-  <footer class="footer container">
-    <small>
-      ※これは「工務店が施主に見せるための簡易ツール」です。影・屋根制約・電力契約・実測負荷・現地条件は考慮していません。数値は目安です。
-    </small>
-  </footer>
+  <button id="btnContractor" class="fab" type="button" aria-label="工務店設定を開く" title="工務店設定（Shift+9）">⚙</button>
 
-  <script src="./app.js"></script>
-
-  <!-- Secret admin button (contractor only) -->
-  <button id="btnAdmin" class="secret-gear" type="button" aria-label="工務店設定"></button>
-
-  <div id="adminModal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" id="adminBackdrop"></div>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="adminTitle">
-      <div class="modal-header">
-        <div>
-          <div id="adminTitle" class="modal-title">工務店設定（非表示）</div>
-          <div class="modal-sub">※ここで設定した値は「見積りレンジ」にのみ影響します。</div>
-        </div>
-        <button id="btnAdminClose" class="btn btn-ghost" type="button">閉じる</button>
+  <div id="modalBackdrop" class="modal-backdrop hidden" aria-hidden="true"></div>
+  <div id="modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">工務店設定（非表示）</div>
+        <div class="mini muted">利益率はこの画面のみに表示され、結果画面には一切出ません。</div>
       </div>
+      <button id="btnCloseModal" class="btn btn-ghost" type="button">閉じる</button>
+    </div>
 
-      <div class="divider"></div>
-
-      <div id="adminLocked">
-        <div class="lock-row">
-          <input id="adminPasscode" type="password" placeholder="パスコード" />
-          <button id="btnAdminUnlock" class="btn btn-primary" type="button">解除</button>
-        </div>
-        <small class="hint">※静的サイトの簡易ロックです（本格ログインはサーバーが必要）。</small>
+    <div class="modal-body">
+      <div class="lock-row">
+        <input id="passcode" type="password" placeholder="パスコード（暫定）" />
+        <button id="btnUnlock" class="btn" type="button">解除</button>
+        <button id="btnLock" class="btn btn-ghost" type="button">ロック</button>
       </div>
+      <small class="hint">
+        ※静的サイトの簡易ロックです（端末のlocalStorageに保存）。本格ログインはサーバーが必要です。
+      </small>
 
-      <div id="adminBody" class="hidden" aria-hidden="true">
+      <div id="settingsBody" class="settings-body hidden" aria-hidden="true">
         <div class="settings-grid">
-
           <label class="field">
             <span class="field-label">工務店 利益率（%）</span>
             <input id="profitRate" type="number" inputmode="decimal" min="-50" max="200" step="0.5" />
-            <small class="hint">※表・結果画面には表示されません。</small>
+            <small class="hint">概算総額（中央値）に掛けます。結果画面には表示されません。</small>
           </label>
 
           <label class="field">
@@ -160,50 +121,63 @@
           </label>
 
           <label class="field">
-            <span class="field-label">自家消費で賄いたい割合（%）</span>
-            <input id="coveragePct" type="number" inputmode="decimal" min="10" max="120" step="1" />
-          </label>
-
-          <label class="field">
-            <span class="field-label">茨城の想定発電量（kWh/kW/月）</span>
-            <input id="pvYield" type="number" inputmode="decimal" min="50" max="140" step="1" />
-          </label>
-
-          <label class="field">
             <span class="field-label">夜間比率（%）</span>
-            <input id="nightPct" type="number" inputmode="decimal" min="10" max="80" step="1" />
+            <input id="nightPct" type="number" inputmode="decimal" min="10" max="95" step="1" />
+            <small class="hint">夜の使用割合（既定: 70%）。</small>
           </label>
 
           <label class="field">
-            <span class="field-label">PV上限（kW）</span>
-            <input id="maxPvKw" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0 = 無制限" />
+            <span class="field-label">発電量（kWh / kW / 日）</span>
+            <input id="pvYieldPerKwDay" type="number" inputmode="decimal" min="0.5" max="8" step="0.1" />
+            <small class="hint">PV 1kWあたりの1日平均発電量。茨城の概算として使用します。</small>
           </label>
 
           <label class="field">
-            <span class="field-label">表示候補数</span>
-            <select id="topN">
-              <option value="3" selected>3件</option>
-              <option value="5">5件</option>
-            </select>
+            <span class="field-label">PV探索範囲（kW）</span>
+            <div class="row2">
+              <input id="pvMinKw" type="number" inputmode="decimal" min="0.5" step="0.1" />
+              <input id="pvMaxKw" type="number" inputmode="decimal" min="1" step="0.1" />
+              <input id="pvStepKw" type="number" inputmode="decimal" min="0.01" step="0.01" />
+            </div>
+            <small class="hint">既定: 1.00〜13.50 / 0.01刻み</small>
           </label>
 
           <label class="field">
-            <span class="field-label">パスコード（変更）</span>
-            <input id="passcode" type="text" placeholder="例）ogw" />
-            <small class="hint">変更すると次回から新しいパスコードで解除します。</small>
+            <span class="field-label">“目劣り”判定（許容差）</span>
+            <div class="row2">
+              <input id="profitTolYen" type="number" inputmode="numeric" min="0" step="10000" placeholder="利益差(円)" />
+              <input id="roiTolPt" type="number" inputmode="decimal" min="0" step="0.1" placeholder="ROI差(%pt)" />
+              <input id="paybackTolY" type="number" inputmode="decimal" min="0" step="0.1" placeholder="回収差(年)" />
+            </div>
+            <small class="hint">例：利益-10万 / ROI-2pt / 回収+1.5年 以内なら「明確な劣り」ではない。</small>
           </label>
 
+          <label class="field inline">
+            <input id="showDebug" type="checkbox" />
+            <span>工務店向けの詳細（計算内訳）を表示</span>
+          </label>
+
+          <label class="field">
+            <span class="field-label">パスコード変更（任意）</span>
+            <input id="newPasscode" type="text" placeholder="未入力なら変更しません" />
+          </label>
         </div>
 
         <div class="settings-actions">
-          <button id="btnSaveSettings" class="btn btn-primary" type="button">保存</button>
+          <button id="btnSaveSettings" class="btn btn-primary" type="button">設定を保存</button>
         </div>
-      </div>
 
-      <div class="divider"></div>
-      <small class="hint">開き方：右下の小さいボタン / ショートカット（Shift + 9）</small>
+        <div id="debugBox" class="debug hidden" aria-hidden="true"></div>
+      </div>
     </div>
   </div>
 
+  <footer class="footer container">
+    <small class="muted">
+      ※簡易モデル：影・方位・季節変動・劣化・電力契約の詳細は考慮していません。数値は目安です。
+    </small>
+  </footer>
+
+  <script src="./app.js"></script>
 </body>
 </html>
