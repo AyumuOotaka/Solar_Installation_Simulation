@@ -19,13 +19,9 @@
     // UI
     displayMode: 'simple',      // simple | standard
 
-    // Recommended slots visibility
+    // Recommended slots visibility (payback/budget removed)
     showSlot_pv_profit: true,
-    showSlot_pv_payback: true,
     showSlot_bat_profit: true,
-    showSlot_bat_payback: true,
-    showSlot_budget: true,
-    showSlot_overall_payback: true,
     showSlot_custom: true,
 
     // Contractor custom plan
@@ -260,6 +256,7 @@
 
   
   
+  
   function pickCandidates(all, settings, customCandidate) {
     const useBattery = !!settings.useBattery;
     const budgetYen = (Number.isFinite(settings.budgetYen) && settings.budgetYen > 0) ? settings.budgetYen : Infinity;
@@ -280,107 +277,41 @@
     function push(slotId, type, cand) {
       if (!cand) return;
       candidates.push({ slotId, type, cand });
+      slotMap[slotId] = cand;
     }
 
-    function computeTwo(arr, prefix, slotBase) {
-      const out = [];
-      const eligible = arr.filter(withinBudget);
-
-      if (!eligible.length) return out;
-
-      const profitSorted = [...eligible].sort((a, b) => b.netProfit - a.netProfit);
-      const profitWinner = profitSorted[0];
-
-      const finitePB = eligible.filter(a => Number.isFinite(a.payback));
-      let paybackWinner = null;
-      if (finitePB.length) {
-        paybackWinner = [...finitePB].sort((a, b) => a.payback - b.payback)[0];
-      }
-
-      const profitSlotId = slotBase + "_profit";
-      const paybackSlotId = slotBase + "_payback";
-
-      out.push({ slotId: profitSlotId, type: `${prefix}純利益最大`, cand: profitWinner });
-
-      if (paybackWinner && keyOf(paybackWinner) !== keyOf(profitWinner)) {
-        out.push({ slotId: paybackSlotId, type: `${prefix}回収年数最小`, cand: paybackWinner });
+    // PV-only: profit max (within budget)
+    {
+      const eligible = noBatAll.filter(withinBudget);
+      if (eligible.length) {
+        const best = [...eligible].sort((a, b) => b.netProfit - a.netProfit)[0];
+        slotMap['pv_profit'] = best;
+        if (show('showSlot_pv_profit')) push('pv_profit', 'PVのみ：純利益最大', best);
       } else {
-        let alt = null;
-        if (finitePB.length) {
-          const sorted = [...finitePB].sort((a,b) => a.payback - b.payback);
-          alt = sorted.find(a => keyOf(a) !== keyOf(profitWinner)) || null;
-        }
-        if (!alt) alt = profitSorted.find(a => keyOf(a) !== keyOf(profitWinner)) || null;
-        out.push({ slotId: paybackSlotId, type: `${prefix}回収年数最小`, cand: alt || profitWinner });
+        messages.push('PVのみ：予算内候補なし');
       }
-
-      return out.slice(0, 2);
     }
 
-    // PV-only slots: always compute for label update
-    const pvPicked = computeTwo(noBatAll, 'PVのみ：', 'pv');
-    if (pvPicked.length) {
-      for (const p of pvPicked) slotMap[p.slotId] = p.cand;
-      for (const p of pvPicked) {
-        if (p.slotId === 'pv_profit' && !show('showSlot_pv_profit')) continue;
-        if (p.slotId === 'pv_payback' && !show('showSlot_pv_payback')) continue;
-        push(p.slotId, p.type, p.cand);
-      }
-    } else {
-      messages.push('PVのみ：予算内候補なし');
-    }
-
-    // Battery slots
+    // Battery: profit max (within budget)
     if (useBattery) {
-      const batPicked = computeTwo(withBatAll, '蓄電池あり：', 'bat');
-      if (batPicked.length) {
-        for (const p of batPicked) slotMap[p.slotId] = p.cand;
-        for (const p of batPicked) {
-          if (p.slotId === 'bat_profit' && !show('showSlot_bat_profit')) continue;
-          if (p.slotId === 'bat_payback' && !show('showSlot_bat_payback')) continue;
-          push(p.slotId, p.type, p.cand);
-        }
+      const eligible = withBatAll.filter(withinBudget);
+      if (eligible.length) {
+        const best = [...eligible].sort((a, b) => b.netProfit - a.netProfit)[0];
+        slotMap['bat_profit'] = best;
+        if (show('showSlot_bat_profit')) push('bat_profit', '蓄電池あり：純利益最大', best);
       } else {
         messages.push('蓄電池あり：予算内候補なし');
       }
     }
 
-    // Invest max within budget (tie-break by PV then BAT)
-    {
-      const eligibleAll = (useBattery ? all : noBatAll).filter(withinBudget);
-      if (eligibleAll.length) {
-        const inv = [...eligibleAll].sort((a, b) => {
-          const d = (b.price.median - a.price.median);
-          if (Math.abs(d) > 1e-6) return d;
-          if (b.pvKw !== a.pvKw) return b.pvKw - a.pvKw;
-          return b.batKwh - a.batKwh;
-        })[0];
-        slotMap['budget'] = inv;
-        if (show('showSlot_budget')) push('budget', '予算使い切り：投資金額最大', inv);
-      } else {
-        messages.push('予算使い切り：予算内候補なし');
-      }
-    }
-
-    // Contractor custom plan: always compute label; show only if within budget AND enabled
+    // Contractor custom: ALWAYS show (even if over budget) when enabled
     if (customCandidate) {
       slotMap['custom'] = customCandidate;
-      if (show('showSlot_custom') && withinBudget(customCandidate)) {
-        push('custom', '工務店作成（自由選択）', customCandidate);
-      } else if (show('showSlot_custom') && !withinBudget(customCandidate)) {
-        messages.push('工務店作成：予算外');
+      if (show('showSlot_custom')) {
+        candidates.push({ slotId: 'custom', type: '工務店作成（自由選択）', cand: customCandidate });
       }
-    }
-
-    // Overall payback min
-    {
-      const eligibleAll = (useBattery ? all : noBatAll).filter(withinBudget).filter(a => Number.isFinite(a.payback));
-      if (eligibleAll.length) {
-        const bestPB = [...eligibleAll].sort((a, b) => a.payback - b.payback)[0];
-        slotMap['overall_payback'] = bestPB;
-        if (show('showSlot_overall_payback')) push('overall_payback', '全体：回収年数最小', bestPB);
-      } else {
-        messages.push('全体：回収年数最小（計算不可/候補なし）');
+      if (budgetYen !== Infinity && customCandidate.price && customCandidate.price.min > budgetYen) {
+        messages.push('工務店作成：予算外（※表示はしています）');
       }
     }
 
@@ -413,6 +344,7 @@
       displayMode: settings.displayMode || 'simple'
     };
   }
+
 
 
 
@@ -511,11 +443,7 @@ function renderPlans(picks, unitPrice) {
     el('displayMode').value = s.displayMode || 'simple';
 
     el('showSlot_pv_profit').checked = !!s.showSlot_pv_profit;
-    el('showSlot_pv_payback').checked = !!s.showSlot_pv_payback;
     el('showSlot_bat_profit').checked = !!s.showSlot_bat_profit;
-    el('showSlot_bat_payback').checked = !!s.showSlot_bat_payback;
-    el('showSlot_budget').checked = !!s.showSlot_budget;
-    el('showSlot_overall_payback').checked = !!s.showSlot_overall_payback;
     el('showSlot_custom').checked = !!s.showSlot_custom;
 
     el('customPvKw').value = (Number.isFinite(s.customPvKw) ? s.customPvKw : 5.00).toFixed(2);
@@ -549,11 +477,7 @@ function renderPlans(picks, unitPrice) {
     next.displayMode = String(el('displayMode').value || cur.displayMode || 'simple');
 
     next.showSlot_pv_profit = !!el('showSlot_pv_profit').checked;
-    next.showSlot_pv_payback = !!el('showSlot_pv_payback').checked;
     next.showSlot_bat_profit = !!el('showSlot_bat_profit').checked;
-    next.showSlot_bat_payback = !!el('showSlot_bat_payback').checked;
-    next.showSlot_budget = !!el('showSlot_budget').checked;
-    next.showSlot_overall_payback = !!el('showSlot_overall_payback').checked;
     next.showSlot_custom = !!el('showSlot_custom').checked;
 
     next.customPvKw = Number(el('customPvKw').value || cur.customPvKw || 5.00);
@@ -896,11 +820,7 @@ function doCalc() {
     const fmt = (pvKw, batKwh) => `（PV ${pvKw.toFixed(2)}kW, BAT ${batKwh > 0 ? batKwh.toFixed(1) : '0.0'}kWh）`;
     const base = {
       pv_profit: 'PVのみ：純利益最大',
-      pv_payback: 'PVのみ：回収年数最小',
       bat_profit: '蓄電池あり：純利益最大',
-      bat_payback: '蓄電池あり：回収年数最小',
-      budget: '予算使い切り：投資金額最大',
-      overall_payback: '全体：回収年数最小',
       custom: '工務店作成（自由選択）'
     };
     for (const key of Object.keys(base)) {
