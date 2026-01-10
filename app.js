@@ -169,16 +169,18 @@
     const days = 365;
     const annualAvoidYen = flows.selfConsumption * unitPrice * days;
 
-    let revenue15 = 0;
-    for (let y = 1; y <= 15; y++) {
+    const years = settings.horizonYears || 15;
+
+    let revenueYen = 0;
+    for (let y = 1; y <= years; y++) {
       const r = yearlyFitRate(y);
-      revenue15 += flows.pvSold * r * days;
+      revenueYen += flows.pvSold * r * days;
     }
 
-    const avoid15 = annualAvoidYen * 15;
-    const benefit15 = avoid15 + revenue15;
+    const avoidYen = annualAvoidYen * years;
+    const benefitYen = avoidYen + revenueYen;
 
-    return { usageKwhMonth, usageKwhDay, flows, annualAvoidYen, avoid15, revenue15, benefit15 };
+    return { usageKwhMonth, usageKwhDay, flows, annualAvoidYen, years, avoidYen, revenueYen, benefitYen };
   }
 
   function estimateCustomerPrice({ pvKw, batKwh, settings }) {
@@ -211,7 +213,7 @@
     const econ = estimate15yEconomics({ pvKw, batKwh, unitPrice, billYen, settings });
     const price = estimateCustomerPrice({ pvKw, batKwh, settings });
 
-    const netProfit = econ.benefit15 - price.median;
+    const netProfit = econ.benefitYen - price.median;
     const roi = price.median > 0 ? (netProfit / price.median) : -Infinity;
 
     const flows = econ.flows;
@@ -246,12 +248,17 @@
     const useBattery = !!settings.useBattery;
     const budgetYen = (Number.isFinite(settings.budgetYen) && settings.budgetYen > 0) ? settings.budgetYen : Infinity;
 
+    // eligible set respects budget by price.min
+    const withinBudget = (a) => (budgetYen === Infinity) ? true : (a.price && a.price.min <= budgetYen);
+
+    // groups (unfiltered)
     const noBatAll = all.filter(a => a.batKwh === 0);
     const withBatAll = all.filter(a => a.batKwh > 0);
 
-    function keyOf(a) { return `${a.pvKw.toFixed(2)}|${a.batKwh.toFixed(1)}`; }
+    // eligible by toggle: PV-only always, battery only when toggled
+    const eligibleAll = useBattery ? all : noBatAll;
 
-    const withinBudget = (a) => (budgetYen === Infinity) ? true : (a.price && a.price.min <= budgetYen);
+    function keyOf(a) { return `${a.pvKw.toFixed(2)}|${a.batKwh.toFixed(1)}`; }
 
     function pickTwo(arrAll, prefix, messages) {
       const arr = arrAll.filter(withinBudget);
@@ -273,7 +280,6 @@
         : null;
 
       const out = [];
-
       const push = (label, cand) => {
         if (!cand) return false;
         const key = keyOf(cand);
@@ -288,16 +294,13 @@
       if (paybackWinner && keyOf(paybackWinner) !== keyOf(profitWinner)) {
         push('回収年数最小', paybackWinner);
       } else {
-        // find next best payback excluding profitWinner
         let alt = null;
         if (finitePB.length) {
           const sorted = [...finitePB].sort((a,b) => a.payback - b.payback);
           alt = sorted.find(a => keyOf(a) !== keyOf(profitWinner)) || null;
         }
-        if (alt) {
-          push('回収年数最小', alt);
-        } else {
-          // fallback: next best profit
+        if (alt) push('回収年数最小', alt);
+        else {
           const sortedP = [...arr].sort((a,b) => b.netProfit - a.netProfit);
           const altP = sortedP.find(a => keyOf(a) !== keyOf(profitWinner)) || null;
           if (altP) push('回収年数最小', altP);
@@ -311,12 +314,40 @@
     const messages = [];
     const candidates = [];
 
-    // Always show PV-only 2 plans (within budget by min range)
+    // Existing 4 slots
     candidates.push(...pickTwo(noBatAll, 'PVのみ：', messages));
-
-    // If user enabled battery mode, also show battery plans (2)
     if (useBattery) {
       candidates.push(...pickTwo(withBatAll, '蓄電池あり：', messages));
+    }
+
+    // Extra slots (2):
+    // ① 投資金額最大（予算内で最大の中央値）
+    const eligibleWithin = eligibleAll.filter(withinBudget);
+    if (eligibleWithin.length) {
+      const investMax = eligibleWithin.reduce((p,c) => (c.price.median > p.price.median ? c : p), eligibleWithin[0]);
+      candidates.push({ type: '予算使い切り：投資金額最大', key: keyOf(investMax), cand: investMax });
+    } else {
+      messages.push(`全体：予算内候補なし（投資金額最大を算出できません）`);
+    }
+
+    // ② 回収年数最小（全体・予算内・トグル適用）
+    const finitePBAll = eligibleWithin.filter(a => Number.isFinite(a.payback));
+    if (finitePBAll.length) {
+      const pbMinAll = finitePBAll.reduce((p,c) => (c.payback < p.payback ? c : p), finitePBAll[0]);
+      candidates.push({ type: '全体：回収年数最小', key: keyOf(pbMinAll), cand: pbMinAll });
+    } else if (eligibleWithin.length) {
+      messages.push(`全体：回収年数が算出できる候補なし`);
+    }
+
+    // Ensure unique (avoid duplicates) but keep order; allow <6.
+    const seen = new Set();
+    const uniq = [];
+    for (const item of candidates) {
+      const k = item.key;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      uniq.push(item);
+      if (uniq.length >= 6) break;
     }
 
     // stats (overall, unfiltered)
@@ -327,7 +358,7 @@
       if (Number.isFinite(a.payback) && a.payback < bestPayback) bestPayback = a.payback;
     }
 
-    return { candidates, messages, stats: { bestProfit, bestROI, bestPayback }, budgetYen };
+    return { candidates: uniq, messages, stats: { bestProfit, bestROI, bestPayback }, budgetYen, horizonYears: settings.horizonYears || 15 };
   }
 
 function renderPlans(picks, unitPrice) {
@@ -342,7 +373,8 @@ function renderPlans(picks, unitPrice) {
       const roi = cand.roi;
       const pb = cand.payback;
 
-      const pbText = Number.isFinite(pb) ? pb.toFixed(1) + '年' : '15年超';
+      const H = picks.horizonYears || 15;
+      const pbText = Number.isFinite(pb) ? pb.toFixed(1) + '年' : `${H}年超`;
       const netText = (net >= 0 ? '+' : '') + formatYen(net) + '円';
       const priceText = `¥${formatYen(cand.price.min)} 〜 ¥${formatYen(cand.price.max)}`;
 
@@ -362,7 +394,7 @@ function renderPlans(picks, unitPrice) {
               <div class="value">${priceText}</div>
             </div>
             <div class="item">
-              <div class="label">15年 純利益（目安）</div>
+              <div class="label">${H}年 純利益（目安）</div>
               <div class="value">${netText}</div>
             </div>
             <div class="item">
@@ -590,10 +622,10 @@ function renderPlans(picks, unitPrice) {
         price_width: Math.round(cand.price.width),
         price_rangeMin: Math.round(cand.price.min),
         price_rangeMax: Math.round(cand.price.max),
-        econ_avoid15: Math.round(cand.econ.avoid15),
-        econ_revenue15: Math.round(cand.econ.revenue15),
-        econ_benefit15: Math.round(cand.econ.benefit15),
-        netProfit15: Math.round(cand.netProfit),
+        econ_avoid: Math.round(cand.econ.avoidYen),
+        econ_revenue: Math.round(cand.econ.revenueYen),
+        econ_benefit: Math.round(cand.econ.benefitYen),
+        netProfit: Math.round(cand.netProfit),
         roiPct: Number((cand.roi * 100).toFixed(2)),
         paybackY: Number.isFinite(cand.payback) ? Number(cand.payback.toFixed(2)) : null,
         rankProfit: r.profitRank,
@@ -653,8 +685,8 @@ function renderPlans(picks, unitPrice) {
       lines.push(`  PV=${a.pvKw.toFixed(2)}kW  bat=${a.batKwh.toFixed(1)}kWh`);
       lines.push(`  PRICE: baseMedian=${Math.round(a.price.baseMedian)} median(afterProfit)=${Math.round(a.price.median)} width=±${Math.round(a.price.width)} range=[${Math.round(a.price.min)}..${Math.round(a.price.max)}]`);
       lines.push(`  FLOWS(kWh/day): pvGen=${a.econ.flows.pvGen.toFixed(2)} pvToDay=${a.econ.flows.pvToDay.toFixed(2)} batCharge=${a.econ.flows.batCharge.toFixed(2)} sold=${a.econ.flows.pvSold.toFixed(2)} batToNight=${a.econ.flows.batToNight.toFixed(2)} self=${a.econ.flows.selfConsumption.toFixed(2)} grid=${a.econ.flows.gridTotal.toFixed(2)}`);
-      lines.push(`  ECON: avoid15=${Math.round(a.econ.avoid15)} revenue15=${Math.round(a.econ.revenue15)} benefit15=${Math.round(a.econ.benefit15)}`);
-      lines.push(`  METRICS: netProfit15=${Math.round(a.netProfit)} ROI=${(a.roi*100).toFixed(2)}% payback=${Number.isFinite(a.payback)?a.payback.toFixed(2):'Inf'}y`);
+      lines.push(`  ECON: avoid=${Math.round(a.econ.avoidYen)} revenue=${Math.round(a.econ.revenueYen)} benefit=${Math.round(a.econ.benefitYen)}`);
+      lines.push(`  METRICS: netProfit=${Math.round(a.netProfit)} ROI=${(a.roi*100).toFixed(2)}% payback=${Number.isFinite(a.payback)?a.payback.toFixed(2):'Inf'}y`);
       lines.push('');
     }
     return lines.join('\n');
@@ -669,6 +701,10 @@ function doCalc() {
     const budgetRaw = (el('budgetYen')?.value ?? '').toString().trim();
     const budgetYen = budgetRaw === '' ? Infinity : Number(budgetRaw);
     settings.budgetYen = (Number.isFinite(budgetYen) && budgetYen > 0) ? budgetYen : Infinity;
+
+    const yearsRaw = (el('horizonYears')?.value ?? '').toString().trim();
+    const horizonYears = yearsRaw === '' ? settings.defaultHorizonYears : Number(yearsRaw);
+    settings.horizonYears = (Number.isFinite(horizonYears) && horizonYears >= 1) ? Math.round(horizonYears) : settings.defaultHorizonYears;
 
     const useBattery = !!el('useBattery').checked;
     settings.useBattery = useBattery;
@@ -685,9 +721,10 @@ function doCalc() {
     const { usageKwhMonth } = billToUsageKwhMonth(billYen, unitPrice, settings.fixedFeeYen);
 
     el('pillUsage').textContent = `推定使用量: ${usageKwhMonth.toFixed(0)}kWh/月`;
-    el('pillTariff').textContent = `売電単価: 1-4年 ${yearlyFitRate(1)}円 / 5-10年 ${yearlyFitRate(5)}円 / 11-15年 ${yearlyFitRate(11)}円`;
+    el('pillTariff').textContent = `売電単価: 1-4年 ${yearlyFitRate(1)}円 / 5-10年 ${yearlyFitRate(5)}円 / 11年以降 ${yearlyFitRate(11)}円`;
 
     el('pillBudget').textContent = settings.budgetYen === Infinity ? '予算: 制限なし' : `予算: ¥${formatYen(settings.budgetYen)}`;
+    el('pillYears').textContent = `期間: ${settings.horizonYears}年`;
 
     const pvGrid = buildPvGrid(settings);
     const batteryList = useBattery ? BATTERY_SIZES : [0];
@@ -709,7 +746,7 @@ function doCalc() {
     }
 
 
-    el('planNote').textContent = '※表示：予算内（概算レンジ下限が予算内）の中から、PVのみ2件（純利益最大/回収最短）＋（蓄電池ありON時）蓄電池あり2件（純利益最大/回収最短）';
+    el('planNote').textContent = '※表示：予算内（概算レンジ下限が予算内）の中から、PVのみ2件＋（蓄電池ありON時）蓄電池あり2件＋投資金額最大＋全体回収年数最小（最大6件）';
 
     const dbg = renderDebug(evals, picks, ranks, settings, billYen, unitPrice);
     el('debugBox').textContent = dbg;
