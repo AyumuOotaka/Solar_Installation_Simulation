@@ -158,17 +158,68 @@
             <small class="hint">既定: 1.00〜13.50 / 0.01刻み</small>
           </label>
 
+          <div class="divider"></div>
+
           <label class="field">
-            <span class="field-label">“目劣り”判定（許容差）</span>
-            <div class="row2">
-              <input id="profitTolYen" type="number" inputmode="numeric" min="0" step="10000" placeholder="利益差(円)" />
-              <input id="roiTolPt" type="number" inputmode="decimal" min="0" step="0.1" placeholder="ROI差(%pt)" />
-              <input id="paybackTolY" type="number" inputmode="decimal" min="0" step="0.1" placeholder="回収差(年)" />
-            </div>
-            <small class="hint">例：利益-10万 / ROI-2pt / 回収+1.5年 以内なら「明確な劣り」ではない。</small>
+            <span class="field-label">表示モード</span>
+            <select id="displayMode">
+              <option value="simple">シンプル（レンジ・純利益・回収年数のみ）</option>
+              <option value="standard">標準（ROIなども表示）</option>
+            </select>
+            <small class="hint">施主に見せる情報量を調整できます。</small>
           </label>
 
-          <label class="field inline">
+          <div class="field">
+            <div class="field-label">おすすめ枠の表示（チェックで非表示）</div>
+            <div class="checklist">
+              <label class="check">
+                <input id="showSlot_pv_profit" type="checkbox" />
+                <span id="slotLabel_pv_profit">PVのみ：純利益最大</span>
+              </label>
+              <label class="check">
+                <input id="showSlot_pv_payback" type="checkbox" />
+                <span id="slotLabel_pv_payback">PVのみ：回収年数最小</span>
+              </label>
+              <label class="check">
+                <input id="showSlot_bat_profit" type="checkbox" />
+                <span id="slotLabel_bat_profit">蓄電池あり：純利益最大</span>
+              </label>
+              <label class="check">
+                <input id="showSlot_bat_payback" type="checkbox" />
+                <span id="slotLabel_bat_payback">蓄電池あり：回収年数最小</span>
+              </label>
+              <label class="check">
+                <input id="showSlot_budget" type="checkbox" />
+                <span id="slotLabel_budget">予算使い切り：投資金額最大</span>
+              </label>
+              <label class="check">
+                <input id="showSlot_overall_payback" type="checkbox" />
+                <span id="slotLabel_overall_payback">全体：回収年数最小</span>
+              </label>
+              <label class="check">
+                <input id="showSlot_custom" type="checkbox" />
+                <span id="slotLabel_custom">工務店作成（自由選択）</span>
+              </label>
+            </div>
+            <small class="hint">※ラベルは「項目名（PV xx.xkW / BAT xx.xkWh）」の形式で、診断後に更新されます。</small>
+          </div>
+
+          <div class="field">
+            <div class="field-label">工務店作成（自由選択）</div>
+            <div class="row2">
+              <label class="field inline">
+                <span class="mini muted">PV(kW)</span>
+                <input id="customPvKw" type="number" inputmode="decimal" min="1" max="13.5" step="0.01" />
+              </label>
+              <label class="field inline">
+                <span class="mini muted">蓄電池(kWh)</span>
+                <select id="customBatKwh"></select>
+              </label>
+            </div>
+            <small class="hint">蓄電池0.0を選ぶと「なし」です（工務店作成カードに反映）。</small>
+          </div>
+
+<label class="field inline">
             <input id="showDebug" type="checkbox" />
             <span>工務店向けの詳細（計算内訳）を表示</span>
           </label>

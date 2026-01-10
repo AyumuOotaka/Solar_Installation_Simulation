@@ -252,3 +252,28 @@ body.present .subtitle,
 body.present .fab{
   display:none !important;
 }
+
+
+/* --- Settings extras --- */
+.divider{
+  height: 1px;
+  background: rgba(255,255,255,.08);
+  margin: 14px 0;
+}
+.checklist{
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+.check{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(255,255,255,.03);
+}
+.check input{
+  transform: translateY(1px);
+}

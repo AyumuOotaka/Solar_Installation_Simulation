@@ -15,9 +15,23 @@
     pvMinKw: 1.0,
     pvMaxKw: 13.5,
     pvStepKw: 0.01,
-    profitTolYen: 100000,
-    roiTolPt: 2.0,              // percentage points
-    paybackTolY: 1.5,
+
+    // UI
+    displayMode: 'simple',      // simple | standard
+
+    // Recommended slots visibility
+    showSlot_pv_profit: true,
+    showSlot_pv_payback: true,
+    showSlot_bat_profit: true,
+    showSlot_bat_payback: true,
+    showSlot_budget: true,
+    showSlot_overall_payback: true,
+    showSlot_custom: true,
+
+    // Contractor custom plan
+    customPvKw: 5.00,
+    customBatKwh: 0.0,
+
     showDebug: true,
     passcode: 'ogw'
   };
@@ -244,106 +258,137 @@
     return out;
   }
 
-  function pickCandidates(all, settings) {
+  
+  
+  function pickCandidates(all, settings, customCandidate) {
     const useBattery = !!settings.useBattery;
     const budgetYen = (Number.isFinite(settings.budgetYen) && settings.budgetYen > 0) ? settings.budgetYen : Infinity;
 
     // eligible set respects budget by price.min
     const withinBudget = (a) => (budgetYen === Infinity) ? true : (a.price && a.price.min <= budgetYen);
 
-    // groups (unfiltered)
     const noBatAll = all.filter(a => a.batKwh === 0);
     const withBatAll = all.filter(a => a.batKwh > 0);
 
-    // eligible by toggle: PV-only always, battery only when toggled
-    const eligibleAll = useBattery ? all : noBatAll;
-
     function keyOf(a) { return `${a.pvKw.toFixed(2)}|${a.batKwh.toFixed(1)}`; }
+    const show = (k) => (settings[k] !== false);
 
-    function pickTwo(arrAll, prefix, messages) {
-      const arr = arrAll.filter(withinBudget);
-      if (!arr.length) {
-        const minLower = arrAll.length ? Math.min(...arrAll.map(a => a.price?.min ?? Infinity)) : Infinity;
-        if (budgetYen !== Infinity && Number.isFinite(minLower)) {
-          messages.push(`${prefix}予算内候補なし（最安レンジ下限: ¥${formatYen(minLower)}）`);
-        } else {
-          messages.push(`${prefix}候補なし`);
-        }
-        return [];
+    const messages = [];
+    const candidates = [];
+    const slotMap = {}; // slotId -> cand
+
+    function push(slotId, type, cand) {
+      if (!cand) return;
+      candidates.push({ slotId, type, cand });
+    }
+
+    function computeTwo(arr, prefix, slotBase) {
+      const out = [];
+      const eligible = arr.filter(withinBudget);
+
+      if (!eligible.length) return out;
+
+      const profitSorted = [...eligible].sort((a, b) => b.netProfit - a.netProfit);
+      const profitWinner = profitSorted[0];
+
+      const finitePB = eligible.filter(a => Number.isFinite(a.payback));
+      let paybackWinner = null;
+      if (finitePB.length) {
+        paybackWinner = [...finitePB].sort((a, b) => a.payback - b.payback)[0];
       }
 
-      const profitWinner = arr.reduce((p,c) => (c.netProfit > p.netProfit ? c : p), arr[0]);
+      const profitSlotId = slotBase + "_profit";
+      const paybackSlotId = slotBase + "_payback";
 
-      const finitePB = arr.filter(a => Number.isFinite(a.payback));
-      const paybackWinner = finitePB.length
-        ? finitePB.reduce((p,c) => (c.payback < p.payback ? c : p), finitePB[0])
-        : null;
+      out.push({ slotId: profitSlotId, type: `${prefix}純利益最大`, cand: profitWinner });
 
-      const out = [];
-      const push = (label, cand) => {
-        if (!cand) return false;
-        const key = keyOf(cand);
-        if (out.some(x => x.key === key)) return false;
-        out.push({ type: `${prefix}${label}`, key, cand });
-        return true;
-      };
-
-      push('純利益最大', profitWinner);
-
-      // Payback: if same as profit winner, choose next best payback
       if (paybackWinner && keyOf(paybackWinner) !== keyOf(profitWinner)) {
-        push('回収年数最小', paybackWinner);
+        out.push({ slotId: paybackSlotId, type: `${prefix}回収年数最小`, cand: paybackWinner });
       } else {
         let alt = null;
         if (finitePB.length) {
           const sorted = [...finitePB].sort((a,b) => a.payback - b.payback);
           alt = sorted.find(a => keyOf(a) !== keyOf(profitWinner)) || null;
         }
-        if (alt) push('回収年数最小', alt);
-        else {
-          const sortedP = [...arr].sort((a,b) => b.netProfit - a.netProfit);
-          const altP = sortedP.find(a => keyOf(a) !== keyOf(profitWinner)) || null;
-          if (altP) push('回収年数最小', altP);
-          else push('回収年数最小', profitWinner);
-        }
+        if (!alt) alt = profitSorted.find(a => keyOf(a) !== keyOf(profitWinner)) || null;
+        out.push({ slotId: paybackSlotId, type: `${prefix}回収年数最小`, cand: alt || profitWinner });
       }
 
       return out.slice(0, 2);
     }
 
-    const messages = [];
-    const candidates = [];
-
-    // Existing 4 slots
-    candidates.push(...pickTwo(noBatAll, 'PVのみ：', messages));
-    if (useBattery) {
-      candidates.push(...pickTwo(withBatAll, '蓄電池あり：', messages));
-    }
-
-    // Extra slots (2):
-    // ① 投資金額最大（予算内で最大の中央値）
-    const eligibleWithin = eligibleAll.filter(withinBudget);
-    if (eligibleWithin.length) {
-      const investMax = eligibleWithin.reduce((p,c) => (c.price.median > p.price.median ? c : p), eligibleWithin[0]);
-      candidates.push({ type: '予算使い切り：投資金額最大', key: keyOf(investMax), cand: investMax });
+    // PV-only slots: always compute for label update
+    const pvPicked = computeTwo(noBatAll, 'PVのみ：', 'pv');
+    if (pvPicked.length) {
+      for (const p of pvPicked) slotMap[p.slotId] = p.cand;
+      for (const p of pvPicked) {
+        if (p.slotId === 'pv_profit' && !show('showSlot_pv_profit')) continue;
+        if (p.slotId === 'pv_payback' && !show('showSlot_pv_payback')) continue;
+        push(p.slotId, p.type, p.cand);
+      }
     } else {
-      messages.push(`全体：予算内候補なし（投資金額最大を算出できません）`);
+      messages.push('PVのみ：予算内候補なし');
     }
 
-    // ② 回収年数最小（全体・予算内・トグル適用）
-    const finitePBAll = eligibleWithin.filter(a => Number.isFinite(a.payback));
-    if (finitePBAll.length) {
-      const pbMinAll = finitePBAll.reduce((p,c) => (c.payback < p.payback ? c : p), finitePBAll[0]);
-      candidates.push({ type: '全体：回収年数最小', key: keyOf(pbMinAll), cand: pbMinAll });
-    } else if (eligibleWithin.length) {
-      messages.push(`全体：回収年数が算出できる候補なし`);
+    // Battery slots
+    if (useBattery) {
+      const batPicked = computeTwo(withBatAll, '蓄電池あり：', 'bat');
+      if (batPicked.length) {
+        for (const p of batPicked) slotMap[p.slotId] = p.cand;
+        for (const p of batPicked) {
+          if (p.slotId === 'bat_profit' && !show('showSlot_bat_profit')) continue;
+          if (p.slotId === 'bat_payback' && !show('showSlot_bat_payback')) continue;
+          push(p.slotId, p.type, p.cand);
+        }
+      } else {
+        messages.push('蓄電池あり：予算内候補なし');
+      }
     }
 
-    // Ensure unique (avoid duplicates) but keep order; allow <6.
+    // Invest max within budget (tie-break by PV then BAT)
+    {
+      const eligibleAll = (useBattery ? all : noBatAll).filter(withinBudget);
+      if (eligibleAll.length) {
+        const inv = [...eligibleAll].sort((a, b) => {
+          const d = (b.price.median - a.price.median);
+          if (Math.abs(d) > 1e-6) return d;
+          if (b.pvKw !== a.pvKw) return b.pvKw - a.pvKw;
+          return b.batKwh - a.batKwh;
+        })[0];
+        slotMap['budget'] = inv;
+        if (show('showSlot_budget')) push('budget', '予算使い切り：投資金額最大', inv);
+      } else {
+        messages.push('予算使い切り：予算内候補なし');
+      }
+    }
+
+    // Contractor custom plan: always compute label; show only if within budget AND enabled
+    if (customCandidate) {
+      slotMap['custom'] = customCandidate;
+      if (show('showSlot_custom') && withinBudget(customCandidate)) {
+        push('custom', '工務店作成（自由選択）', customCandidate);
+      } else if (show('showSlot_custom') && !withinBudget(customCandidate)) {
+        messages.push('工務店作成：予算外');
+      }
+    }
+
+    // Overall payback min
+    {
+      const eligibleAll = (useBattery ? all : noBatAll).filter(withinBudget).filter(a => Number.isFinite(a.payback));
+      if (eligibleAll.length) {
+        const bestPB = [...eligibleAll].sort((a, b) => a.payback - b.payback)[0];
+        slotMap['overall_payback'] = bestPB;
+        if (show('showSlot_overall_payback')) push('overall_payback', '全体：回収年数最小', bestPB);
+      } else {
+        messages.push('全体：回収年数最小（計算不可/候補なし）');
+      }
+    }
+
+    // unique by combo, keep order, cap at 6
     const seen = new Set();
     const uniq = [];
     for (const item of candidates) {
-      const k = item.key;
+      const k = keyOf(item.cand);
       if (seen.has(k)) continue;
       seen.add(k);
       uniq.push(item);
@@ -358,8 +403,18 @@
       if (Number.isFinite(a.payback) && a.payback < bestPayback) bestPayback = a.payback;
     }
 
-    return { candidates: uniq, messages, stats: { bestProfit, bestROI, bestPayback }, budgetYen, horizonYears: settings.horizonYears || 15 };
+    return {
+      candidates: uniq,
+      messages,
+      slotMap,
+      stats: { bestProfit, bestROI, bestPayback },
+      budgetYen,
+      horizonYears: settings.horizonYears || 15,
+      displayMode: settings.displayMode || 'simple'
+    };
   }
+
+
 
 function renderPlans(picks, unitPrice) {
     if (!picks.candidates || picks.candidates.length === 0) {
@@ -373,10 +428,19 @@ function renderPlans(picks, unitPrice) {
       const roi = cand.roi;
       const pb = cand.payback;
 
+      const displayMode = (picks.displayMode === 'standard') ? 'standard' : 'simple';
+
       const H = picks.horizonYears || 15;
       const pbText = Number.isFinite(pb) ? pb.toFixed(1) + '年' : `${H}年超`;
       const netText = (net >= 0 ? '+' : '') + formatYen(net) + '円';
       const priceText = `¥${formatYen(cand.price.min)} 〜 ¥${formatYen(cand.price.max)}`;
+
+
+      const roiHtml = (displayMode === 'standard') ? `
+            <div class=\"item\">
+              <div class=\"label\">ROI（目安）</div>
+              <div class=\"value\">${formatPct(roi)}</div>
+            </div>` : '';
 
       return `
         <div class="plan-card">
@@ -396,11 +460,7 @@ function renderPlans(picks, unitPrice) {
             <div class="item">
               <div class="label">${H}年 純利益（目安）</div>
               <div class="value">${netText}</div>
-            </div>
-            <div class="item">
-              <div class="label">ROI（目安）</div>
-              <div class="value">${formatPct(roi)}</div>
-            </div>
+            </div>${roiHtml}
             <div class="item">
               <div class="label">回収年数（目安）</div>
               <div class="value">${pbText}</div>
@@ -447,9 +507,22 @@ function renderPlans(picks, unitPrice) {
     el('pvMinKw').value = s.pvMinKw;
     el('pvMaxKw').value = s.pvMaxKw;
     el('pvStepKw').value = s.pvStepKw;
-    el('profitTolYen').value = s.profitTolYen;
-    el('roiTolPt').value = s.roiTolPt;
-    el('paybackTolY').value = s.paybackTolY;
+
+    el('displayMode').value = s.displayMode || 'simple';
+
+    el('showSlot_pv_profit').checked = !!s.showSlot_pv_profit;
+    el('showSlot_pv_payback').checked = !!s.showSlot_pv_payback;
+    el('showSlot_bat_profit').checked = !!s.showSlot_bat_profit;
+    el('showSlot_bat_payback').checked = !!s.showSlot_bat_payback;
+    el('showSlot_budget').checked = !!s.showSlot_budget;
+    el('showSlot_overall_payback').checked = !!s.showSlot_overall_payback;
+    el('showSlot_custom').checked = !!s.showSlot_custom;
+
+    el('customPvKw').value = (Number.isFinite(s.customPvKw) ? s.customPvKw : 5.00).toFixed(2);
+    // customBatKwh options are populated in init(); set value if exists
+    if (el('customBatKwh').options && el('customBatKwh').options.length) {
+      el('customBatKwh').value = String(Number.isFinite(s.customBatKwh) ? s.customBatKwh : 0.0);
+    }
     el('showDebug').checked = !!s.showDebug;
     el('fixedFeeLabel').textContent = formatYen(s.fixedFeeYen);
 
@@ -472,9 +545,19 @@ function renderPlans(picks, unitPrice) {
     next.pvMaxKw = Number(el('pvMaxKw').value || cur.pvMaxKw);
     next.pvStepKw = Number(el('pvStepKw').value || cur.pvStepKw);
 
-    next.profitTolYen = Number(el('profitTolYen').value || cur.profitTolYen);
-    next.roiTolPt = Number(el('roiTolPt').value || cur.roiTolPt);
-    next.paybackTolY = Number(el('paybackTolY').value || cur.paybackTolY);
+
+    next.displayMode = String(el('displayMode').value || cur.displayMode || 'simple');
+
+    next.showSlot_pv_profit = !!el('showSlot_pv_profit').checked;
+    next.showSlot_pv_payback = !!el('showSlot_pv_payback').checked;
+    next.showSlot_bat_profit = !!el('showSlot_bat_profit').checked;
+    next.showSlot_bat_payback = !!el('showSlot_bat_payback').checked;
+    next.showSlot_budget = !!el('showSlot_budget').checked;
+    next.showSlot_overall_payback = !!el('showSlot_overall_payback').checked;
+    next.showSlot_custom = !!el('showSlot_custom').checked;
+
+    next.customPvKw = Number(el('customPvKw').value || cur.customPvKw || 5.00);
+    next.customBatKwh = Number(el('customBatKwh').value || cur.customBatKwh || 0.0);
 
     next.showDebug = !!el('showDebug').checked;
 
@@ -492,9 +575,12 @@ function renderPlans(picks, unitPrice) {
     next.pvMaxKw = clamp(next.pvMaxKw, next.pvMinKw, 60);
     next.pvStepKw = clamp(next.pvStepKw, 0.01, 1);
 
-    next.profitTolYen = clamp(next.profitTolYen, 0, 2000000);
-    next.roiTolPt = clamp(next.roiTolPt, 0, 20);
-    next.paybackTolY = clamp(next.paybackTolY, 0, 10);
+
+    next.displayMode = (next.displayMode === 'standard') ? 'standard' : 'simple';
+
+    next.customPvKw = clamp(next.customPvKw, next.pvMinKw, next.pvMaxKw);
+    // battery sizes are from json; allow 0 or up to 16.6 as per list
+    next.customBatKwh = clamp(next.customBatKwh, 0, 16.6);
 
     return next;
   }
@@ -736,10 +822,21 @@ function doCalc() {
       }
     }
 
-    const picks = pickCandidates(evals, settings);
+    // Contractor custom plan (computed separately so it can exist even when battery toggle is off)
+    const customCand = evaluateCombo({
+      pvKw: Number(settings.customPvKw || 0),
+      batKwh: Number(settings.customBatKwh || 0),
+      billYen,
+      unitPrice,
+      settings
+    });
+
+    const picks = pickCandidates(evals, settings, customCand);
+
     const ranks = computeRanks(evals);
 
     el('plans').innerHTML = renderPlans(picks, unitPrice);
+    updateSlotLabels(picks);
     if (picks.messages && picks.messages.length) {
       const base = el('planNote').textContent || '';
       el('planNote').textContent = base + ' / ' + picks.messages.join(' / ');
@@ -775,8 +872,49 @@ function doCalc() {
     setResultVisible(false);
   }
 
-  async function init() {
+  
+  function populateCustomBatSelect() {
+    const sel = el('customBatKwh');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const opts = [0, ...(Array.isArray(BATTERY_SIZES) ? BATTERY_SIZES : [])];
+    for (const v of opts) {
+      const o = document.createElement('option');
+      o.value = String(v);
+      o.textContent = (v === 0) ? '0.0（なし）' : `${Number(v).toFixed(1)}kWh`;
+      sel.appendChild(o);
+    }
+  }
+
+  function setSlotLabel(id, text) {
+    const s = document.getElementById(id);
+    if (s) s.textContent = text;
+  }
+
+  function updateSlotLabels(picks) {
+    if (!picks || !picks.slotMap) return;
+    const fmt = (pvKw, batKwh) => `（PV ${pvKw.toFixed(2)}kW, BAT ${batKwh > 0 ? batKwh.toFixed(1) : '0.0'}kWh）`;
+    const base = {
+      pv_profit: 'PVのみ：純利益最大',
+      pv_payback: 'PVのみ：回収年数最小',
+      bat_profit: '蓄電池あり：純利益最大',
+      bat_payback: '蓄電池あり：回収年数最小',
+      budget: '予算使い切り：投資金額最大',
+      overall_payback: '全体：回収年数最小',
+      custom: '工務店作成（自由選択）'
+    };
+    for (const key of Object.keys(base)) {
+      const cand = picks.slotMap[key] || null;
+      const suffix = cand ? fmt(cand.pvKw, cand.batKwh) : '（—）';
+      setSlotLabel('slotLabel_' + key, base[key] + suffix);
+    }
+  }
+
+async function init() {
     await loadData();
+
+
+    populateCustomBatSelect();
 
     if (!localStorage.getItem(LS_KEY)) saveSettings({ ...DEFAULTS });
 
