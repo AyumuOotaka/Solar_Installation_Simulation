@@ -169,7 +169,6 @@
             <small class="hint">施主に見せる情報量を調整できます。</small>
           </label>
 
-          
           <div class="field">
             <div class="field-label">おすすめ枠の表示（チェックで非表示）</div>
             <div class="checklist">
@@ -178,17 +177,28 @@
                 <span id="slotLabel_pv_profit">PVのみ：純利益最大</span>
               </label>
               <label class="check">
+                <input id="showSlot_pv_payback" type="checkbox" />
+                <span id="slotLabel_pv_payback">PVのみ：回収年数最小</span>
+              </label>
+              <label class="check">
                 <input id="showSlot_bat_profit" type="checkbox" />
                 <span id="slotLabel_bat_profit">蓄電池あり：純利益最大</span>
+              </label>
+              <label class="check">
+                <input id="showSlot_bat_payback" type="checkbox" />
+                <span id="slotLabel_bat_payback">蓄電池あり：回収年数最小</span>
+              </label>
+<label class="check">
+                <input id="showSlot_overall_payback" type="checkbox" />
+                <span id="slotLabel_overall_payback">全体：回収年数最小</span>
               </label>
               <label class="check">
                 <input id="showSlot_custom" type="checkbox" />
                 <span id="slotLabel_custom">工務店作成（自由選択）</span>
               </label>
             </div>
-            <small class="hint">※ラベルは「項目名（PV xx.xkW, BAT xx.xkWh）」の形式で、診断後に更新されます。</small>
+            <small class="hint">※ラベルは「項目名（PV xx.xkW / BAT xx.xkWh）」の形式で、診断後に更新されます。</small>
           </div>
-
 
           <div class="field">
             <div class="field-label">工務店作成（自由選択）</div>
