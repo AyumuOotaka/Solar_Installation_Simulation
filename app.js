@@ -244,14 +244,27 @@
 
   function pickCandidates(all, settings) {
     const useBattery = !!settings.useBattery;
+    const budgetYen = (Number.isFinite(settings.budgetYen) && settings.budgetYen > 0) ? settings.budgetYen : Infinity;
 
-    const noBat = all.filter(a => a.batKwh === 0);
-    const withBat = all.filter(a => a.batKwh > 0);
+    const noBatAll = all.filter(a => a.batKwh === 0);
+    const withBatAll = all.filter(a => a.batKwh > 0);
 
     function keyOf(a) { return `${a.pvKw.toFixed(2)}|${a.batKwh.toFixed(1)}`; }
 
-    function pickTwo(arr, prefix) {
-      if (!arr.length) return [];
+    const withinBudget = (a) => (budgetYen === Infinity) ? true : (a.price && a.price.min <= budgetYen);
+
+    function pickTwo(arrAll, prefix, messages) {
+      const arr = arrAll.filter(withinBudget);
+      if (!arr.length) {
+        const minLower = arrAll.length ? Math.min(...arrAll.map(a => a.price?.min ?? Infinity)) : Infinity;
+        if (budgetYen !== Infinity && Number.isFinite(minLower)) {
+          messages.push(`${prefix}予算内候補なし（最安レンジ下限: ¥${formatYen(minLower)}）`);
+        } else {
+          messages.push(`${prefix}候補なし`);
+        }
+        return [];
+      }
+
       const profitWinner = arr.reduce((p,c) => (c.netProfit > p.netProfit ? c : p), arr[0]);
 
       const finitePB = arr.filter(a => Number.isFinite(a.payback));
@@ -275,7 +288,7 @@
       if (paybackWinner && keyOf(paybackWinner) !== keyOf(profitWinner)) {
         push('回収年数最小', paybackWinner);
       } else {
-        // find next best payback (finite) excluding profitWinner
+        // find next best payback excluding profitWinner
         let alt = null;
         if (finitePB.length) {
           const sorted = [...finitePB].sort((a,b) => a.payback - b.payback);
@@ -295,16 +308,18 @@
       return out.slice(0, 2);
     }
 
+    const messages = [];
     const candidates = [];
-    // Always show PV-only 2 plans
-    candidates.push(...pickTwo(noBat, 'PVのみ：'));
+
+    // Always show PV-only 2 plans (within budget by min range)
+    candidates.push(...pickTwo(noBatAll, 'PVのみ：', messages));
 
     // If user enabled battery mode, also show battery plans (2)
     if (useBattery) {
-      candidates.push(...pickTwo(withBat, '蓄電池あり：'));
+      candidates.push(...pickTwo(withBatAll, '蓄電池あり：', messages));
     }
 
-    // stats (overall)
+    // stats (overall, unfiltered)
     let bestProfit = -Infinity, bestROI = -Infinity, bestPayback = Infinity;
     for (const a of all) {
       if (a.netProfit > bestProfit) bestProfit = a.netProfit;
@@ -312,10 +327,14 @@
       if (Number.isFinite(a.payback) && a.payback < bestPayback) bestPayback = a.payback;
     }
 
-    return { candidates, stats: { bestProfit, bestROI, bestPayback } };
+    return { candidates, messages, stats: { bestProfit, bestROI, bestPayback }, budgetYen };
   }
 
 function renderPlans(picks, unitPrice) {
+    if (!picks.candidates || picks.candidates.length === 0) {
+      return `<div class="mini muted">予算内の候補がありません。予算を上げるか、工務店設定（利益率・前提）を見直してください。</div>`;
+    }
+
     return picks.candidates.map(({ type, cand }) => {
       const pv = cand.pvKw.toFixed(2);
       const bat = cand.batKwh > 0 ? cand.batKwh.toFixed(1) + 'kWh' : 'なし';
@@ -545,6 +564,7 @@ function renderPlans(picks, unitPrice) {
       pvYieldPerKwDay: settings.pvYieldPerKwDay,
       pvRange: [settings.pvMinKw, settings.pvMaxKw, settings.pvStepKw],
       profitRatePct: settings.profitRatePct,
+      budgetYen: settings.budgetYen,
       batterySizes: BATTERY_SIZES,
       tariffs: TARIFFS
     });
@@ -560,6 +580,7 @@ function renderPlans(picks, unitPrice) {
       const k = comboKey(cand);
       const r = ranks.rankMap.get(k) || {};
       return {
+        withinBudget: (settings.budgetYen === Infinity) ? true : (cand.price.min <= settings.budgetYen),
         type,
         key: k,
         pvKw: cand.pvKw,
@@ -597,6 +618,7 @@ function renderPlans(picks, unitPrice) {
     lines.push(`billYen=${billYen} unitPrice=${unitPrice}`);
     lines.push(`fixedFeeYen=${settings.fixedFeeYen} nightPct=${settings.nightPct} pvYieldPerKwDay=${settings.pvYieldPerKwDay}`);
     lines.push(`profitRatePct=${settings.profitRatePct}`);
+    lines.push(`budgetYen=${(Number.isFinite(settings.budgetYen)?settings.budgetYen:'Infinity')}`);
     lines.push(`PV range: ${settings.pvMinKw}..${settings.pvMaxKw} step ${settings.pvStepKw}`);
     lines.push(`battery sizes (count=${BATTERY_SIZES.length}): ${BATTERY_SIZES.join(', ')}`);
     lines.push(`tariffs: ${TARIFFS.map(t => `[${t.startYear}-${t.endYear}:${t.yenPerKwh}]`).join(' ')}`);
@@ -643,6 +665,11 @@ function doCalc() {
     const settings = getSettings();
     const billYen = Number(el('billYen').value || 0);
     const unitPrice = Number(el('unitPrice').value || settings.defaultUnitPrice);
+
+    const budgetRaw = (el('budgetYen')?.value ?? '').toString().trim();
+    const budgetYen = budgetRaw === '' ? Infinity : Number(budgetRaw);
+    settings.budgetYen = (Number.isFinite(budgetYen) && budgetYen > 0) ? budgetYen : Infinity;
+
     const useBattery = !!el('useBattery').checked;
     settings.useBattery = useBattery;
 
@@ -660,6 +687,8 @@ function doCalc() {
     el('pillUsage').textContent = `推定使用量: ${usageKwhMonth.toFixed(0)}kWh/月`;
     el('pillTariff').textContent = `売電単価: 1-4年 ${yearlyFitRate(1)}円 / 5-10年 ${yearlyFitRate(5)}円 / 11-15年 ${yearlyFitRate(11)}円`;
 
+    el('pillBudget').textContent = settings.budgetYen === Infinity ? '予算: 制限なし' : `予算: ¥${formatYen(settings.budgetYen)}`;
+
     const pvGrid = buildPvGrid(settings);
     const batteryList = useBattery ? BATTERY_SIZES : [0];
 
@@ -674,8 +703,13 @@ function doCalc() {
     const ranks = computeRanks(evals);
 
     el('plans').innerHTML = renderPlans(picks, unitPrice);
+    if (picks.messages && picks.messages.length) {
+      const base = el('planNote').textContent || '';
+      el('planNote').textContent = base + ' / ' + picks.messages.join(' / ');
+    }
 
-    el('planNote').textContent = '※表示：PVのみ（純利益最大/回収最短）＋（蓄電池ありON時）蓄電池あり（純利益最大/回収最短）';
+
+    el('planNote').textContent = '※表示：予算内（概算レンジ下限が予算内）の中から、PVのみ2件（純利益最大/回収最短）＋（蓄電池ありON時）蓄電池あり2件（純利益最大/回収最短）';
 
     const dbg = renderDebug(evals, picks, ranks, settings, billYen, unitPrice);
     el('debugBox').textContent = dbg;

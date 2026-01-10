@@ -38,7 +38,14 @@
           <small class="hint">未入力の場合は既定値で計算します。</small>
         </label>
 
-        <label class="field inline">
+        
+
+        <label class="field">
+          <span class="field-label">予算（円）</span>
+          <input id="budgetYen" type="number" inputmode="numeric" min="0" placeholder="未入力なら制限なし（例）1500000" />
+          <small class="hint">判定は「概算レンジの最小値が予算内か」で行います。</small>
+        </label>
+<label class="field inline">
           <input id="useBattery" type="checkbox" checked />
           <span>蓄電池を含める（余剰→充電→夜使用→余剰は売電）</span>
         </label>
@@ -68,6 +75,7 @@
           <div class="pill-row">
             <span class="pill" id="pillUsage">使用量: -</span>
             <span class="pill" id="pillTariff">売電: -</span>
+            <span class="pill" id="pillBudget">予算: -</span>
           </div>
 
           <div class="section">
