@@ -438,6 +438,8 @@ function renderPlans(picks, unitPrice) {
 
     el('recommendAxis').value = s.recommendAxis || 'budget';
     el('recommendWithBattery').checked = s.recommendWithBattery !== false;
+    if (el('recommendAxisMain')) el('recommendAxisMain').value = s.recommendAxis || 'budget';
+    if (el('recommendWithBatteryMain')) el('recommendWithBatteryMain').checked = s.recommendWithBattery !== false;
 
     el('customPvKw').value = (Number.isFinite(s.customPvKw) ? s.customPvKw : 5.00).toFixed(2);
     // customBatKwh options are populated in init(); set value if exists
@@ -709,6 +711,11 @@ function doCalc() {
     const horizonYears = yearsRaw === '' ? settings.defaultHorizonYears : Number(yearsRaw);
     settings.horizonYears = (Number.isFinite(horizonYears) && horizonYears >= 1) ? Math.round(horizonYears) : settings.defaultHorizonYears;
 
+    const axisMain = el('recommendAxisMain');
+    if (axisMain) settings.recommendAxis = String(axisMain.value || settings.recommendAxis || 'budget');
+    const axisBatMain = el('recommendWithBatteryMain');
+    if (axisBatMain) settings.recommendWithBattery = !!axisBatMain.checked;
+
     if (!billYen || billYen <= 0) {
       alert('月の電気代（円）を入力してください。');
       return;
@@ -841,7 +848,11 @@ async function init() {
 
     el('btnContractor').addEventListener('click', openModal);
     document.addEventListener('keydown', (e) => {
-      if (e.shiftKey && e.key === '9') openModal();
+      const isShift9 = e.shiftKey && (e.code === 'Digit9' || e.key === '(' || e.key === ')');
+      if (isShift9) {
+        e.preventDefault();
+        openModal();
+      }
       if (e.key === 'Escape') closeModal();
     });
     el('modalBackdrop').addEventListener('click', closeModal);

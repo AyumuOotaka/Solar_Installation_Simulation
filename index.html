@@ -52,6 +52,21 @@
           <small class="hint">純利益・ROI・回収年数の計算期間です（既定: 15年）。</small>
         </label>
 
+        <label class="field">
+          <span class="field-label">提案軸</span>
+          <select id="recommendAxisMain">
+            <option value="budget">予算優先</option>
+            <option value="profit">純利益最大</option>
+            <option value="payback">回収時間最短化</option>
+          </select>
+          <small class="hint">右側の「軸選択」カードの判断軸です。</small>
+        </label>
+
+        <label class="field inline">
+          <input id="recommendWithBatteryMain" type="checkbox" checked />
+          <span>軸選択で蓄電池ありを選ぶ</span>
+        </label>
+
       </div>
 
       <div class="actions">
