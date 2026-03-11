@@ -52,10 +52,6 @@
           <small class="hint">純利益・ROI・回収年数の計算期間です（既定: 15年）。</small>
         </label>
 
-<label class="field inline">
-          <input id="useBattery" type="checkbox" checked />
-          <span>蓄電池を含める（余剰→充電→夜使用→余剰は売電）</span>
-        </label>
       </div>
 
       <div class="actions">
@@ -87,7 +83,7 @@
           </div>
 
           <div class="section">
-            <h3>推奨案（最大6つ）</h3>
+            <h3>推奨案（2つ）</h3>
             <div id="plans" class="plan-grid"></div>
             <div class="mini muted" id="planNote"></div>
           </div>
@@ -170,34 +166,19 @@
           </label>
 
           <div class="field">
-            <div class="field-label">おすすめ枠の表示（チェックで非表示）</div>
-            <div class="checklist">
-              <label class="check">
-                <input id="showSlot_pv_profit" type="checkbox" />
-                <span id="slotLabel_pv_profit">PVのみ：純利益最大</span>
-              </label>
-              <label class="check">
-                <input id="showSlot_pv_payback" type="checkbox" />
-                <span id="slotLabel_pv_payback">PVのみ：回収年数最小</span>
-              </label>
-              <label class="check">
-                <input id="showSlot_bat_profit" type="checkbox" />
-                <span id="slotLabel_bat_profit">蓄電池あり：純利益最大</span>
-              </label>
-              <label class="check">
-                <input id="showSlot_bat_payback" type="checkbox" />
-                <span id="slotLabel_bat_payback">蓄電池あり：回収年数最小</span>
-              </label>
-<label class="check">
-                <input id="showSlot_overall_payback" type="checkbox" />
-                <span id="slotLabel_overall_payback">全体：回収年数最小</span>
-              </label>
-              <label class="check">
-                <input id="showSlot_custom" type="checkbox" />
-                <span id="slotLabel_custom">工務店作成（自由選択）</span>
+            <div class="field-label">推奨軸（右側に1件表示）</div>
+            <div class="row2">
+              <select id="recommendAxis">
+                <option value="budget">予算優先</option>
+                <option value="profit">純利益最大</option>
+                <option value="payback">回収時間最短化</option>
+              </select>
+              <label class="field inline">
+                <input id="recommendWithBattery" type="checkbox" />
+                <span id="slotLabel_axis">軸選択で蓄電池ありを選ぶ</span>
               </label>
             </div>
-            <small class="hint">※ラベルは「項目名（PV xx.xkW / BAT xx.xkWh）」の形式で、診断後に更新されます。</small>
+            <small class="hint">※右側は「軸選択 1件 + 工務店作成 1件」の合計2件を表示します。</small>
           </div>
 
           <div class="field">
@@ -214,6 +195,8 @@
             </div>
             <small class="hint">蓄電池0.0を選ぶと「なし」です（工務店作成カードに反映）。</small>
           </div>
+
+          <div class="mini muted" id="slotLabel_custom">工務店作成（自由選択）</div>
 
 <label class="field inline">
             <input id="showDebug" type="checkbox" />
